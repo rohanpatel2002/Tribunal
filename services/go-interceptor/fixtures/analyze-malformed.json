@@ -1,0 +1,11 @@
+{
+  "repository": "rohanpatel2002/tribunal",
+  "prNumber": 0,
+  "files": [
+    {
+      "path": "",
+      "status": "unknown",
+      "patch": "ALTER TABLE users ADD COLUMN status TEXT;"
+    }
+  ]
+}

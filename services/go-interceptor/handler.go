@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -32,8 +33,8 @@ func analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req AnalyzeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+	if err := decodeJSONBody(r.Body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -53,8 +54,8 @@ func githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload GitHubWebhookPayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid webhook payload"})
+	if err := decodeJSONBody(r.Body, &payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -70,6 +71,15 @@ func githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			"error": "webhook payload missing tribunal_files; use /analyze for direct analysis or include file patches",
 		})
 		return
+	}
+
+	for i, f := range payload.TribunalFiles {
+		if strings.TrimSpace(f.Path) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("tribunal_files[%d].path is required", i),
+			})
+			return
+		}
 	}
 
 	req := AnalyzeRequest{
@@ -92,11 +102,46 @@ func validateAnalyzeRequest(req AnalyzeRequest) error {
 	if len(req.Files) == 0 {
 		return fmt.Errorf("files must not be empty")
 	}
+	const maxFilesPerRequest = 300
+	if len(req.Files) > maxFilesPerRequest {
+		return fmt.Errorf("files must not exceed %d entries", maxFilesPerRequest)
+	}
+
+	allowedStatus := map[string]struct{}{
+		"added":    {},
+		"modified": {},
+		"removed":  {},
+		"deleted":  {},
+	}
+
 	for i, f := range req.Files {
 		if strings.TrimSpace(f.Path) == "" {
 			return fmt.Errorf("files[%d].path is required", i)
 		}
+
+		status := strings.ToLower(strings.TrimSpace(f.Status))
+		if status == "" {
+			return fmt.Errorf("files[%d].status is required", i)
+		}
+		if _, ok := allowedStatus[status]; !ok {
+			return fmt.Errorf("files[%d].status must be one of added, modified, removed, deleted", i)
+		}
 	}
+	return nil
+}
+
+func decodeJSONBody(body io.Reader, target any) error {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("invalid JSON payload")
+	}
+
+	if decoder.More() {
+		return fmt.Errorf("invalid JSON payload: multiple JSON values are not allowed")
+	}
+
 	return nil
 }
 

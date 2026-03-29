@@ -1,0 +1,16 @@
+{
+  "repository": "rohanpatel2002/tribunal",
+  "prNumber": 202,
+  "files": [
+    {
+      "path": "services/utils/strings.go",
+      "status": "modified",
+      "patch": "func NormalizeName(v string) string { return strings.TrimSpace(strings.ToLower(v)) }"
+    },
+    {
+      "path": "services/utils/time.go",
+      "status": "added",
+      "patch": "func IsRecent(ts int64) bool { return ts > 0 }"
+    }
+  ]
+}
