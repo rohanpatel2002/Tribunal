@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -19,14 +21,63 @@ type GitHubWebhookPayload struct {
 	TribunalFiles []ChangedFile `json:"tribunal_files"`
 }
 
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
+// Handler holds the application's external dependencies (like the database).
+type Handler struct {
+	repo Repository
+}
+
+// NewHandler creates a new HTTP handler with the given repository.
+func NewHandler(repo Repository) *Handler {
+	return &Handler{repo: repo}
+}
+
+func (h *Handler) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
 		"service": "go-interceptor",
 	})
 }
 
-func analyzeHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) getAnalysisHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	repoName := r.URL.Query().Get("repo")
+	prStr := r.URL.Query().Get("pr")
+
+	if repoName == "" || prStr == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing 'repo' or 'pr' query parameters"})
+		return
+	}
+
+	prNum, err := strconv.Atoi(prStr)
+	if err != nil || prNum <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid 'pr' number"})
+		return
+	}
+
+	if h.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database persistence is not configured"})
+		return
+	}
+
+	analysis, err := h.repo.GetAnalysisByPR(r.Context(), repoName, prNum)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") || err == ErrAnalysisNotFound {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "analysis not found"})
+			return
+		}
+		log.Printf("DB error fetching analysis: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, analysis)
+}
+
+func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -44,10 +95,19 @@ func analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := BuildResponse(req)
+
+	// Persist the analysis if a repository is configured
+	if h.repo != nil {
+		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
+			log.Printf("Warning: failed to save analysis to DB: %v", err)
+			// We do not fail the request if the DB save fails, just log it.
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -89,6 +149,14 @@ func githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := BuildResponse(req)
+
+	// Persist to database
+	if h.repo != nil {
+		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
+			log.Printf("Warning: failed to save webhook analysis to DB: %v", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
