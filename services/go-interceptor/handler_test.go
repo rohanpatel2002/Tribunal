@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,5 +87,81 @@ func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+}
+
+// MockRepository helps simulate database interactions for HTTP testing without a real Postgres instance
+type MockRepository struct {
+	SaveFunc func(ctx context.Context, response *AnalyzeResponse) error
+	GetFunc  func(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error)
+}
+
+func (m *MockRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResponse) error {
+	if m.SaveFunc != nil {
+		return m.SaveFunc(ctx, response)
+	}
+	return nil
+}
+
+func (m *MockRepository) GetAnalysisByPR(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error) {
+	if m.GetFunc != nil {
+		return m.GetFunc(ctx, repository, prNumber)
+	}
+	return nil, ErrAnalysisNotFound
+}
+
+func TestGetAnalysisHandler_Success(t *testing.T) {
+	mockRepo := &MockRepository{
+		GetFunc: func(ctx context.Context, repo string, pr int) (*AnalyzeResponse, error) {
+			return &AnalyzeResponse{
+				Repository: repo,
+				PRNumber:   pr,
+				Summary:    AnalysisSummary{Recommendation: "APPROVE"},
+			}, nil
+		},
+	}
+
+	h := NewHandler(mockRepo)
+	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=100", nil)
+	rr := httptest.NewRecorder()
+
+	h.getAnalysisHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "APPROVE") {
+		t.Fatalf("expected body to contain APPROVE, got: %s", rr.Body.String())
+	}
+}
+
+func TestGetAnalysisHandler_NotFound(t *testing.T) {
+	mockRepo := &MockRepository{
+		GetFunc: func(ctx context.Context, repo string, pr int) (*AnalyzeResponse, error) {
+			return nil, ErrAnalysisNotFound
+		},
+	}
+
+	h := NewHandler(mockRepo)
+	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=999", nil)
+	rr := httptest.NewRecorder()
+
+	h.getAnalysisHandler(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected %d, got %d", http.StatusNotFound, rr.Code)
+	}
+}
+
+func TestGetAnalysisHandler_NoDBConfigured(t *testing.T) {
+	// Notice we pass nil for the repository
+	h := NewHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=100", nil)
+	rr := httptest.NewRecorder()
+
+	h.getAnalysisHandler(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected Service Unavailable %d, got %d", http.StatusServiceUnavailable, rr.Code)
 	}
 }
