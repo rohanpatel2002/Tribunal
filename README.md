@@ -109,7 +109,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    GitHub/GitLab/Gitea                          │
-│                     (PR Events)                                  │
+│                     (PR Events)                                 │
 └────────────────────────┬────────────────────────────────────────┘
                          │
                          ▼
@@ -119,7 +119,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
         │   • Extract changed files          │
         │   • 3-signal AI authorship detect  │
         │   • ~2ms per file                  │
-        └────────┬─────────────────────────┘
+        └────────┬───────────────────────────┘
                  │
                  ▼
         ┌────────────────────────────────────┐
@@ -128,7 +128,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
         │  • Load incident history           │
         │  • Map dependency graph            │
         │  • ~100ms for full context         │
-        └────────┬─────────────────────────┘
+        └────────┬───────────────────────────┘
                  │
                  ▼
         ┌────────────────────────────────────┐
@@ -137,7 +137,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
         │   • Incident-to-code correlations  │
         │   • Scale constraints              │
         │   • API documentation              │
-        └────────┬─────────────────────────┘
+        └────────┬───────────────────────────┘
                  │
                  ▼
         ┌────────────────────────────────────┐
@@ -146,7 +146,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
         │  • Context blindness detection     │
         │  • Risk classification             │
         │  • ~5s per high-risk section       │
-        └────────┬─────────────────────────┘
+        └────────┬───────────────────────────┘
                  │
                  ▼
         ┌────────────────────────────────────┐
@@ -154,7 +154,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
         │  • Create human-readable docs      │
         │  • Risk scores + recommendations   │
         │  • Evidence + incident links       │
-        └────────┬─────────────────────────┘
+        └────────┬───────────────────────────┘
                  │
                  ▼
         ┌────────────────────────────────────┐
@@ -163,7 +163,7 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
         │  • Inline code annotations         │
         │  • Context briefing display        │
         │  • Risk heatmap visualization      │
-        └────────┬─────────────────────────┘
+        └────────┬───────────────────────────┘
                  │
                  ▼
         ┌────────────────────────────────────┐
