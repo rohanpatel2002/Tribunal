@@ -1,0 +1,50 @@
+name: CI
+
+# Trigger CI on pushes to the main branch and on all Pull Requests
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        # Our Go application lives in a subdirectory
+        working-directory: ./services/go-interceptor
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          # Automatically caches downloaded Go modules to speed up CI runs
+          cache-dependency-path: ./services/go-interceptor/go.sum
+
+      - name: Install Dependencies
+        run: go mod download
+
+      - name: Verify Clean Code Formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not properly formatted. Please run 'go fmt ./...' locally."
+            exit 1
+          fi
+
+      - name: Run Static Analysis (go vet)
+        run: go vet ./...
+
+      - name: Verify Clean Build
+        run: go build -v ./...
+
+      - name: Run Test Suite
+        # -race catches sneaky concurrency bugs
+        # -cover tracks our test coverage map
+        run: go test -v -race -cover ./...
