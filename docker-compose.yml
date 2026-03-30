@@ -36,7 +36,6 @@ services:
       - PORT=8080
     depends_on:
       db:
-        # Guarantee that the database is fully initialized before the Go app attempts to connect
         condition: service_healthy
 
 volumes:
