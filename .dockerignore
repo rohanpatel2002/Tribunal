@@ -1,0 +1,17 @@
+# Exclude IDE and environment files
+.vscode/
+.idea/
+.env
+
+# Exclude Go binaries to avoid bloating the image context
+services/go-interceptor/go-interceptor
+services/go-interceptor/*.exe
+
+# Exclude OS-specific cache files
+.DS_Store
+*.swp
+
+# Exclude markdown docs and repo assets that aren't needed inside the container
+*.md
+docs/
+examples/
