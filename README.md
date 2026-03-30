@@ -184,69 +184,87 @@ Scales AI tool trust across 25%+ of codebase without hiring 500 more senior engi
 | **PR UI Overlay** | TypeScript + React | GitHub/GitLab/Gitea APIs, inline annotations, real-time updates |
 | **Data Layer** | PostgreSQL 15+ | Persistent graph storage, incident correlations, audit trail |
 
-## Quick Start
+## Quick Start (Docker - Recommended)
+
+The absolute fastest way to boot TRIBUNAL is using our `docker-compose` orchestration. It automatically wires up the Go Interceptor service and initializes the PostgreSQL database schema for you.
 
 ### Prerequisites
-- Go 1.21+
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL 15+
-- Docker (optional, for PostgreSQL)
+- Docker Engine & Docker Compose
 
-### Local Setup
+### 1-Click Launch
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/rohanpatel2002/tribunal.git
+   cd tribunal
+   ```
+
+2. Boot the cluster in detached mode:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Profit.** Your service is now live on `localhost:8080`.
+   You can verify it by hitting the health endpoint:
+   ```bash
+   curl -s http://localhost:8080/health
+   # Expected: {"service":"go-interceptor","status":"ok"}
+   ```
+
+### Stopping the Cluster
+To gracefully stop the application while preserving your database volumes:
+```bash
+docker-compose down
+```
+
+## Local Setup (Direct Source)
+
+If you are developing locally without Docker, follow these steps:
+
+### Prerequisites
+- Go 1.25+
+- PostgreSQL 15+
+
+### Source Setup
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/tribunal.git
+git clone https://github.com/rohanpatel2002/tribunal.git
 cd tribunal
 
-# Copy environment template
-cp .env.example .env
+# Start PostgreSQL natively
+docker run -d -p 5432:5432 --name tribunal_native_db \
+  -e POSTGRES_USER=tribunal \
+  -e POSTGRES_PASSWORD=tribunal_password_dev \
+  -e POSTGRES_DB=tribunal_db \
+  postgres:15-alpine
 
-# Edit .env with your Claude API key
-nano .env
+# Wait 5 seconds for PostgreSQL to initialize
+sleep 5
 
-# Start PostgreSQL (Docker)
-docker run -d -p 5432:5432 \
-  -e POSTGRES_PASSWORD=tribunal_dev \
-  -e POSTGRES_DB=tribunal \
-  postgres:15
+# Initialize database schema
+docker exec -i tribunal_native_db psql -U tribunal -d tribunal_db < schema/postgres.sql
 
-# Wait 10 seconds for PostgreSQL to start
-sleep 10
-
-# Initialize database
-psql -h localhost -U postgres -d tribunal -f schema/postgres.sql
-
-# Start Go service
+# Start Go service (Pointed at your native database)
 cd services/go-interceptor
 go mod download
-go run main.go &
-
-# In new terminal, start Python service
-cd services/python-analyzer
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py &
-
-# In new terminal, start TypeScript service
-cd services/ts-ui
-npm install
-npm run dev
+export DATABASE_URL=postgres://tribunal:tribunal_password_dev@localhost:5432/tribunal_db?sslmode=disable
+go run main.go
 ```
 
 Services will be available at:
 - **Go Interceptor**: `http://localhost:8080`
-- **Python Analyzer**: `http://localhost:8081`
-- **TypeScript UI**: `http://localhost:3000`
 
 ### First Test
 
-1. Create a test PR in any GitHub repo with AI-written code
-2. TRIBUNAL webhook fires automatically (~2 seconds)
-3. See annotations appear on PR
-4. Click "View Context Briefing" for full analysis
+1. Ensure the server is running on `8080`
+2. Send a simulated webhook payload to the active API:
+   ```bash
+   curl -s -X POST http://localhost:8080/analyze \
+        -H "Content-Type: application/json" \
+        --data-binary @services/go-interceptor/fixtures/analyze-high-risk.json
+   ```
+3. See deterministic AI threat output predicting zero-downtime tolerance violations.
 
 ## Use Cases
 
