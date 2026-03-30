@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: tribunal_db
+    restart: always
+    environment:
+      POSTGRES_USER: tribunal
+      POSTGRES_PASSWORD: tribunal_password_dev
+      POSTGRES_DB: tribunal_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Automatically initialize tables when the container boots for the first time
+      - ./schema/postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tribunal -d tribunal_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # The Go Webhook Analysis Service
+  interceptor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tribunal_interceptor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Inject the connection string to allow the Go app to find the sibling PostgreSQL container
+      - DATABASE_URL=postgres://tribunal:tribunal_password_dev@db:5432/tribunal_db?sslmode=disable
+      - PORT=8080
+    depends_on:
+      db:
+        # Guarantee that the database is fully initialized before the Go app attempts to connect
+        condition: service_healthy
+
+volumes:
+  # Persistent volume so AI analysis data isn't deleted if the container stops
+  postgres_data:
