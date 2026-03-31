@@ -36,3 +36,9 @@ CREATE TABLE IF NOT EXISTS file_analyses (
 
 CREATE INDEX IF NOT EXISTS idx_file_analyses_pr_analysis_id
     ON file_analyses(pr_analysis_id);
+
+CREATE TABLE IF NOT EXISTS processed_webhooks (
+    delivery_id VARCHAR(255) PRIMARY KEY,
+    repository VARCHAR(255) NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

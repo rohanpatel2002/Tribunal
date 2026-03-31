@@ -123,8 +123,8 @@ func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *Analyze
 
 // GetAnalysisByPR retrieves a PR analysis report by matching the repo and PR number
 func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error) {
-	query := `
-		SELECT recommendation, total_files, ai_generated, critical, high, medium, low
+	queryPR := `
+		SELECT id, recommendation, total_files, ai_generated, critical, high, medium, low
 		FROM pr_analyses
 		WHERE repository = $1 AND pr_number = $2
 		ORDER BY created_at DESC
@@ -135,7 +135,9 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 		PRNumber:   prNumber,
 	}
 
-	err := r.pool.QueryRow(ctx, query, repository, prNumber).Scan(
+	var prAnalysisID string
+	err := r.pool.QueryRow(ctx, queryPR, repository, prNumber).Scan(
+		&prAnalysisID,
 		&resp.Summary.Recommendation,
 		&resp.Summary.TotalFiles,
 		&resp.Summary.AIGenerated,
@@ -149,8 +151,60 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 		if err == pgx.ErrNoRows {
 			return nil, ErrAnalysisNotFound
 		}
-		return nil, fmt.Errorf("failed to get PR analysis: %w", err)
+		return nil, fmt.Errorf("failed to get PR analysis summary: %w", err)
+	}
+
+	// Fetch granular file-level analyses
+	queryFiles := `
+		SELECT path, ai_score, is_ai_generated, confidence,
+			   style_signal, pattern_signal, risk_signal, risk_level, summary
+		FROM file_analyses
+		WHERE pr_analysis_id = $1`
+
+	rows, err := r.pool.Query(ctx, queryFiles, prAnalysisID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query file analyses: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var file FileAnalysis
+		err := rows.Scan(
+			&file.Path,
+			&file.AIScore,
+			&file.IsAIGenerated,
+			&file.Confidence,
+			&file.Signals.Style,
+			&file.Signals.Pattern,
+			&file.Signals.Risk,
+			&file.RiskLevel,
+			&file.Summary,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan file analysis row: %w", err)
+		}
+		resp.Results = append(resp.Results, file)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating file analyses: %w", err)
 	}
 
 	return resp, nil
+}
+
+// MarkWebhookProcessed records the delivery ID to ensure idempotent processing.
+func (r *PostgresRepository) MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
+	query := `
+		INSERT INTO processed_webhooks (delivery_id, repository)
+		VALUES ($1, $2)
+		ON CONFLICT (delivery_id) DO NOTHING
+	`
+	commandTag, err := r.pool.Exec(ctx, query, deliveryID, repoFullName)
+	if err != nil {
+		return false, fmt.Errorf("failed to mark webhook processed: %w", err)
+	}
+
+	// If RowsAffected is 0, the delivery_id was already present (due to ON CONFLICT)
+	return commandTag.RowsAffected() > 0, nil
 }

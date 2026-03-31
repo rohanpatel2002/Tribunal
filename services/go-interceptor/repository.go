@@ -22,4 +22,8 @@ type Repository interface {
 	// GetAnalysisByPR retrieves a previously completed analysis by repository name
 	// and PR number. Returns nil if no analysis is found.
 	GetAnalysisByPR(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error)
+
+	// MarkWebhookProcessed attempts to record a webhook delivery ID.
+	// Returns true if successfully recorded, or false if it was already processed.
+	MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error)
 }
