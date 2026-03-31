@@ -154,3 +154,19 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 
 	return resp, nil
 }
+
+// MarkWebhookProcessed records the delivery ID to ensure idempotent processing.
+func (r *PostgresRepository) MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
+	query := `
+		INSERT INTO processed_webhooks (delivery_id, repository)
+		VALUES ($1, $2)
+		ON CONFLICT (delivery_id) DO NOTHING
+	`
+	commandTag, err := r.pool.Exec(ctx, query, deliveryID, repoFullName)
+	if err != nil {
+		return false, fmt.Errorf("failed to mark webhook processed: %w", err)
+	}
+
+	// If RowsAffected is 0, the delivery_id was already present (due to ON CONFLICT)
+	return commandTag.RowsAffected() > 0, nil
+}

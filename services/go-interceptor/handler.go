@@ -113,6 +113,12 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deliveryID := r.Header.Get("X-GitHub-Delivery")
+	if deliveryID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-GitHub-Delivery header"})
+		return
+	}
+
 	var payload GitHubWebhookPayload
 	if err := decodeJSONBody(r.Body, &payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -138,6 +144,17 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": fmt.Sprintf("tribunal_files[%d].path is required", i),
 			})
+			return
+		}
+	}
+
+	if h.repo != nil {
+		processed, err := h.repo.MarkWebhookProcessed(r.Context(), deliveryID, payload.Repository.FullName)
+		if err != nil {
+			slog.Warn("failed to verify webhook idempotency", "error", err)
+		} else if !processed {
+			slog.Info("webhook already processed, ignoring", "deliveryID", deliveryID)
+			writeJSON(w, http.StatusOK, map[string]string{"message": "webhook already processed"})
 			return
 		}
 	}
