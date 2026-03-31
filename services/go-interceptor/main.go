@@ -2,10 +2,17 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 )
+
+func init() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -18,14 +25,14 @@ func main() {
 	if dbURL != "" {
 		pgRepo, err := NewPostgresRepository(context.Background(), dbURL)
 		if err != nil {
-			log.Printf("Warning: failed to connect to Postgres: %v (running without persistence)", err)
+			slog.Warn("failed to connect to Postgres (running without persistence)", "error", err)
 		} else {
-			log.Printf("Connected to Postgres database.")
+			slog.Info("connected to Postgres database")
 			repo = pgRepo
 			defer pgRepo.Close()
 		}
 	} else {
-		log.Printf("DATABASE_URL not set. Running interceptor without database persistence.")
+		slog.Info("DATABASE_URL not set, running interceptor without database persistence")
 	}
 
 	h := NewHandler(repo)
@@ -37,8 +44,9 @@ func main() {
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
 
 	addr := ":" + port
-	log.Printf("go-interceptor listening on %s", addr)
+	slog.Info("go-interceptor starting", "addr", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("server failed: %v", err)
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }
