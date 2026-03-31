@@ -91,6 +91,31 @@ func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 	}
 }
 
+func TestGithubWebhookHandler_AlreadyProcessed(t *testing.T) {
+	// Mock a DB where MarkWebhookProcessed returns false (meaning it was already processed)
+	mockRepo := &MockRepository{
+		MarkWebhookProcessedFunc: func(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
+			return false, nil
+		},
+	}
+
+	h := NewHandler(mockRepo)
+
+	payload := `{"action":"opened","repository":{"full_name":"rohanpatel2002/tribunal"},"pull_request":{"number":9},"tribunal_files":[{"path":"main.go","status":"modified","patch":"test"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(payload))
+	req.Header.Set("X-GitHub-Delivery", "duplicate-delivery-id-999")
+
+	rr := httptest.NewRecorder()
+	h.githubWebhookHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "webhook already processed") {
+		t.Fatalf("expected idempotency message, got %s", rr.Body.String())
+	}
+}
+
 // MockRepository helps simulate database interactions for HTTP testing without a real Postgres instance
 type MockRepository struct {
 	SaveFunc                 func(ctx context.Context, response *AnalyzeResponse) error
