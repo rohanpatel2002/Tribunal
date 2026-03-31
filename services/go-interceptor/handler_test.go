@@ -80,6 +80,7 @@ func TestValidateAnalyzeRequest_MissingStatus(t *testing.T) {
 func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 	payload := `{"action":"opened","repository":{"full_name":"rohanpatel2002/tribunal"},"pull_request":{"number":8},"tribunal_files":[{"path":"main.go","status":"modified","patch":"retry payment transaction"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(payload))
+	req.Header.Set("X-GitHub-Delivery", "test-delivery-id-12345")
 	rr := httptest.NewRecorder()
 
 	h := NewHandler(nil)
@@ -92,8 +93,9 @@ func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 
 // MockRepository helps simulate database interactions for HTTP testing without a real Postgres instance
 type MockRepository struct {
-	SaveFunc func(ctx context.Context, response *AnalyzeResponse) error
-	GetFunc  func(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error)
+	SaveFunc                 func(ctx context.Context, response *AnalyzeResponse) error
+	GetFunc                  func(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error)
+	MarkWebhookProcessedFunc func(ctx context.Context, deliveryID string, repoFullName string) (bool, error)
 }
 
 func (m *MockRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResponse) error {
@@ -108,6 +110,13 @@ func (m *MockRepository) GetAnalysisByPR(ctx context.Context, repository string,
 		return m.GetFunc(ctx, repository, prNumber)
 	}
 	return nil, ErrAnalysisNotFound
+}
+
+func (m *MockRepository) MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
+	if m.MarkWebhookProcessedFunc != nil {
+		return m.MarkWebhookProcessedFunc(ctx, deliveryID, repoFullName)
+	}
+	return true, nil
 }
 
 func TestGetAnalysisHandler_Success(t *testing.T) {
