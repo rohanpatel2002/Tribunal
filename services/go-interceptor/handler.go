@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,7 +69,7 @@ func (h *Handler) getAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "analysis not found"})
 			return
 		}
-		log.Printf("DB error fetching analysis: %v", err)
+		slog.Error("database error fetching analysis", "repo", repoName, "pr", prNum, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
 		return
 	}
@@ -99,7 +99,7 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	// Persist the analysis if a repository is configured
 	if h.repo != nil {
 		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
-			log.Printf("Warning: failed to save analysis to DB: %v", err)
+			slog.Warn("failed to save analysis to DB", "error", err)
 			// We do not fail the request if the DB save fails, just log it.
 		}
 	}
@@ -153,7 +153,7 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	// Persist to database
 	if h.repo != nil {
 		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
-			log.Printf("Warning: failed to save webhook analysis to DB: %v", err)
+			slog.Warn("failed to save webhook analysis to DB", "error", err)
 		}
 	}
 
