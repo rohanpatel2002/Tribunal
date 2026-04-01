@@ -23,12 +23,13 @@ type GitHubWebhookPayload struct {
 
 // Handler holds the application's external dependencies (like the database).
 type Handler struct {
-	repo Repository
+	repo         Repository
+	githubClient GitHubIntegrator
 }
 
-// NewHandler creates a new HTTP handler with the given repository.
-func NewHandler(repo Repository) *Handler {
-	return &Handler{repo: repo}
+// NewHandler creates a new HTTP handler with the given repository and GitHub client.
+func NewHandler(repo Repository, gh GitHubIntegrator) *Handler {
+	return &Handler{repo: repo, githubClient: gh}
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, _ *http.Request) {

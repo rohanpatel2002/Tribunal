@@ -12,7 +12,7 @@ func TestAnalyzeHandler_MethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/analyze", nil)
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil)
+	h := NewHandler(nil, nil)
 	h.analyzeHandler(rr, req)
 
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -24,7 +24,7 @@ func TestAnalyzeHandler_InvalidJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/analyze", strings.NewReader("{"))
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil)
+	h := NewHandler(nil, nil)
 	h.analyzeHandler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -37,7 +37,7 @@ func TestAnalyzeHandler_ValidRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/analyze", strings.NewReader(payload))
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil)
+	h := NewHandler(nil, nil)
 	h.analyzeHandler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -83,7 +83,7 @@ func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 	req.Header.Set("X-GitHub-Delivery", "test-delivery-id-12345")
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil)
+	h := NewHandler(nil, nil)
 	h.githubWebhookHandler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -99,7 +99,7 @@ func TestGithubWebhookHandler_AlreadyProcessed(t *testing.T) {
 		},
 	}
 
-	h := NewHandler(mockRepo)
+	h := NewHandler(mockRepo, nil)
 
 	payload := `{"action":"opened","repository":{"full_name":"rohanpatel2002/tribunal"},"pull_request":{"number":9},"tribunal_files":[{"path":"main.go","status":"modified","patch":"test"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(payload))
@@ -155,7 +155,7 @@ func TestGetAnalysisHandler_Success(t *testing.T) {
 		},
 	}
 
-	h := NewHandler(mockRepo)
+	h := NewHandler(mockRepo, nil)
 	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=100", nil)
 	rr := httptest.NewRecorder()
 
@@ -176,7 +176,7 @@ func TestGetAnalysisHandler_NotFound(t *testing.T) {
 		},
 	}
 
-	h := NewHandler(mockRepo)
+	h := NewHandler(mockRepo, nil)
 	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=999", nil)
 	rr := httptest.NewRecorder()
 
@@ -189,7 +189,7 @@ func TestGetAnalysisHandler_NotFound(t *testing.T) {
 
 func TestGetAnalysisHandler_NoDBConfigured(t *testing.T) {
 	// Notice we pass nil for the repository
-	h := NewHandler(nil)
+	h := NewHandler(nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=100", nil)
 	rr := httptest.NewRecorder()
 
