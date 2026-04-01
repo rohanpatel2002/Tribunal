@@ -34,6 +34,7 @@ services:
       # Inject the connection string to allow the Go app to find the sibling PostgreSQL container
       - DATABASE_URL=postgres://tribunal:tribunal_password_dev@db:5432/tribunal_db?sslmode=disable
       - PORT=8080
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy

@@ -35,7 +35,16 @@ func main() {
 		slog.Info("DATABASE_URL not set, running interceptor without database persistence")
 	}
 
-	h := NewHandler(repo)
+	ghToken := os.Getenv("GITHUB_TOKEN")
+	var ghClient GitHubIntegrator
+	if ghToken != "" {
+		ghClient = NewGitHubClient(ghToken)
+		slog.Info("GitHub client configured")
+	} else {
+		slog.Warn("GITHUB_TOKEN not set; check-runs will be disabled")
+	}
+
+	h := NewHandler(repo, ghClient)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.healthHandler)
