@@ -17,6 +17,9 @@ type GitHubWebhookPayload struct {
 	} `json:"repository"`
 	PullRequest struct {
 		Number int `json:"number"`
+		Head   struct {
+			Sha string `json:"sha"`
+		} `json:"head"`
 	} `json:"pull_request"`
 	TribunalFiles []ChangedFile `json:"tribunal_files"`
 }
