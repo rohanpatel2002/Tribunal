@@ -22,10 +22,11 @@ var (
 	criticalRiskRegex      = regexp.MustCompile(`(?i)(drop table|truncate|delete from|lock table|payment|transaction|non-idempotent|downtime)`)
 )
 
-func AnalyzeFile(ctx context.Context, file ChangedFile, llm LLMIntegrator) FileAnalysis {
+// AnalyzeFile evaluates a single changed file using either dynamic God-Mode context LLM or deterministic heuristics.
+func AnalyzeFile(ctx context.Context, file ChangedFile, llm LLMIntegrator, repoContext string) FileAnalysis {
 	// If we have an LLM configured, try that first for accurate AI risk scoring
 	if llm != nil {
-		llmRes, err := llm.AnalyzeCode(ctx, file.Path, file.Patch)
+		llmRes, err := llm.AnalyzeCode(ctx, file.Path, file.Patch, repoContext)
 		if err == nil && llmRes != nil {
 			return FileAnalysis{
 				Path:          file.Path,
@@ -176,12 +177,13 @@ func classifyRisk(riskScore float64) string {
 	}
 }
 
-func BuildResponse(ctx context.Context, req AnalyzeRequest, llm LLMIntegrator) AnalyzeResponse {
+// BuildResponse constructs the final JSON payload containing file-by-file God-Mode analysis.
+func BuildResponse(ctx context.Context, req AnalyzeRequest, llm LLMIntegrator, repoContext string) AnalyzeResponse {
 	results := make([]FileAnalysis, 0, len(req.Files))
 	summary := AnalysisSummary{TotalFiles: len(req.Files)}
 
 	for _, file := range req.Files {
-		res := AnalyzeFile(ctx, file, llm)
+		res := AnalyzeFile(ctx, file, llm, repoContext)
 		results = append(results, res)
 
 		if res.IsAIGenerated {

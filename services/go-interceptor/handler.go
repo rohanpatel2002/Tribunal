@@ -82,6 +82,7 @@ func (h *Handler) getAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, analysis)
 }
 
+// analyzeHandler supports manual invocations without GitHub webhooks
 func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -99,7 +100,9 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := BuildResponse(r.Context(), req, h.llmClient)
+	// For manual test runs without webhook context
+	repoContext := ""
+	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
 
 	// Persist the analysis if a repository is configured
 	if h.repo != nil {
@@ -170,20 +173,32 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		Files:      payload.TribunalFiles,
 	}
 
-	// Initialize Check Run if we have a GitHub Client + a Commit SHA
+	// 1. Initialize Check Run if we have a GitHub Client + a Commit SHA
 	var checkRunID int64
+	repoContext := ""
+
 	if h.githubClient != nil && payload.PullRequest.Head.Sha != "" {
-		crID, err := h.githubClient.CreateCheckRun(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha, "TRIBUNAL AI Analysis")
+		crID, err := h.githubClient.CreateCheckRun(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha, "TRIBUNAL AI God-Mode")
 		if err != nil {
 			slog.Warn("failed to create check run", "error", err)
 		} else {
 			checkRunID = crID
 		}
+
+		// 2. Fetch God-Mode Architectural Context (e.g. README.md) dynamically
+		contextStr, fetchErr := h.githubClient.FetchRepositoryContext(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha)
+		if fetchErr != nil {
+			slog.Warn("failed to fetch god-mode context, reverting to standard knowledge limits", "error", fetchErr)
+		} else {
+			slog.Info("successfully gathered architectural context from GitHub", "bytesLen", len(contextStr))
+			repoContext = contextStr
+		}
 	}
 
-	resp := BuildResponse(r.Context(), req, h.llmClient)
+	// 3. Analyze the patches with LLM, passing along the God-Mode context
+	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
 
-	// Persist to database
+	// 4. Persist to database
 	if h.repo != nil {
 		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
 			slog.Warn("failed to save webhook analysis to DB", "error", err)
