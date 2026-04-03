@@ -1,12 +1,12 @@
 package main
 
 import (
-        "context"
-        "fmt"
-        "math"
-        "regexp"
-        "strings"
-        "sync"
+	"context"
+	"fmt"
+	"math"
+	"regexp"
+	"strings"
+	"sync"
 )
 
 const (
@@ -181,44 +181,44 @@ func classifyRisk(riskScore float64) string {
 
 // BuildResponse constructs the final JSON payload containing file-by-file God-Mode analysis.
 func BuildResponse(ctx context.Context, req AnalyzeRequest, llm LLMIntegrator, repoContext string) AnalyzeResponse {
-        results := make([]FileAnalysis, len(req.Files))
-        summary := AnalysisSummary{TotalFiles: len(req.Files)}
+	results := make([]FileAnalysis, len(req.Files))
+	summary := AnalysisSummary{TotalFiles: len(req.Files)}
 
-        var wg sync.WaitGroup
-        for i, file := range req.Files {
-                wg.Add(1)
-                go func(index int, f ChangedFile) {
-                        defer wg.Done()
-                        results[index] = AnalyzeFile(ctx, f, llm, repoContext)
-                }(i, file)
-        }
-        wg.Wait()
+	var wg sync.WaitGroup
+	for i, file := range req.Files {
+		wg.Add(1)
+		go func(index int, f ChangedFile) {
+			defer wg.Done()
+			results[index] = AnalyzeFile(ctx, f, llm, repoContext)
+		}(i, file)
+	}
+	wg.Wait()
 
-        for _, res := range results {
-                if res.IsAIGenerated {
-                        summary.AIGenerated++
-                }
+	for _, res := range results {
+		if res.IsAIGenerated {
+			summary.AIGenerated++
+		}
 
-                switch res.RiskLevel {
-                case "CRITICAL":
-                        summary.Critical++
-                case "HIGH":
-                        summary.High++
-                case "MEDIUM":
-                        summary.Medium++
-                default:
-                        summary.Low++
-                }
-        }
+		switch res.RiskLevel {
+		case "CRITICAL":
+			summary.Critical++
+		case "HIGH":
+			summary.High++
+		case "MEDIUM":
+			summary.Medium++
+		default:
+			summary.Low++
+		}
+	}
 
-        summary.Recommendation = buildRecommendation(summary)
+	summary.Recommendation = buildRecommendation(summary)
 
-        return AnalyzeResponse{
-                Repository: req.Repository,
-                PRNumber:   req.PRNumber,
-                Summary:    summary,
-                Results:    results,
-        }
+	return AnalyzeResponse{
+		Repository: req.Repository,
+		PRNumber:   req.PRNumber,
+		Summary:    summary,
+		Results:    results,
+	}
 }
 
 func buildRecommendation(summary AnalysisSummary) string {
