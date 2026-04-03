@@ -6,6 +6,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const (
@@ -180,13 +181,20 @@ func classifyRisk(riskScore float64) string {
 
 // BuildResponse constructs the final JSON payload containing file-by-file God-Mode analysis.
 func BuildResponse(ctx context.Context, req AnalyzeRequest, llm LLMIntegrator, repoContext string) AnalyzeResponse {
-	results := make([]FileAnalysis, 0, len(req.Files))
+	results := make([]FileAnalysis, len(req.Files))
 	summary := AnalysisSummary{TotalFiles: len(req.Files)}
 
-	for _, file := range req.Files {
-		res := AnalyzeFile(ctx, file, llm, repoContext)
-		results = append(results, res)
+	var wg sync.WaitGroup
+	for i, file := range req.Files {
+		wg.Add(1)
+		go func(index int, f ChangedFile) {
+			defer wg.Done()
+			results[index] = AnalyzeFile(ctx, f, llm, repoContext)
+		}(i, file)
+	}
+	wg.Wait()
 
+	for _, res := range results {
 		if res.IsAIGenerated {
 			summary.AIGenerated++
 		}
