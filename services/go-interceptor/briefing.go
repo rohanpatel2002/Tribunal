@@ -52,6 +52,14 @@ func GenerateContextBriefing(resp *AnalyzeResponse) string {
 				buf.WriteString(fmt.Sprintf("**Confidence**: %.0f%%\n", f.Confidence*100))
 				buf.WriteString(fmt.Sprintf("\n**Summary**:\n%s\n\n", f.Summary))
 
+				// Intelligent Code Remediation
+				if f.SuggestedFix != "" {
+					buf.WriteString("**🛠️ Suggested Fix / Remediation**:\n")
+					buf.WriteString("```go\n") // Using go formatting by default
+					buf.WriteString(f.SuggestedFix)
+					buf.WriteString("\n```\n\n")
+				}
+
 				// Breakdown
 				buf.WriteString("**Signal Breakdown**:\n")
 				buf.WriteString(fmt.Sprintf("- Style mismatch: %.2f\n", f.Signals.Style))
