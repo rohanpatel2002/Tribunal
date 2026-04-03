@@ -17,6 +17,9 @@ type GitHubIntegrator interface {
 
 	// UpdateCheckRun updates an existing Check Run with analysis results and conclusion.
 	UpdateCheckRun(ctx context.Context, repository string, checkRunID int64, opts UpdateCheckRunOptions) error
+
+	// FetchRepositoryContext retrieves architectural context files (e.g., README.md) to build God-Mode context.
+	FetchRepositoryContext(ctx context.Context, repository string, headSHA string) (string, error)
 }
 
 // CheckRunOutput represents the rich markdown output displayed in the GitHub UI.
@@ -130,4 +133,45 @@ func (c *DefaultGitHubClient) UpdateCheckRun(ctx context.Context, repository str
 	}
 
 	return nil
+}
+
+// FetchRepositoryContext attempts to pull high-value context files like README.md from the repository
+// at the given commit SHA to feed into our LLM Context Engine.
+func (c *DefaultGitHubClient) FetchRepositoryContext(ctx context.Context, repository string, headSHA string) (string, error) {
+	if c.token == "" {
+		return "", fmt.Errorf("github token is not configured")
+	}
+
+	// Endpoint for fetching file content
+	url := fmt.Sprintf("%s/repos/%s/contents/README.md?ref=%s", c.baseURL, repository, headSHA)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create context request: %w", err)
+	}
+
+	// Requesting raw text instead of base64 JSON
+	req.Header.Set("Accept", "application/vnd.github.v3.raw")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("github context request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// If README does not exist, return an empty context gracefully
+		if resp.StatusCode == http.StatusNotFound {
+			return "", nil
+		}
+		return "", fmt.Errorf("github context api returned status %d", resp.StatusCode)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return "", fmt.Errorf("failed to read context body: %w", err)
+	}
+
+	return buf.String(), nil
 }

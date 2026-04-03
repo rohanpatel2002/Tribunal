@@ -10,8 +10,9 @@ import (
 
 // MockGitHubClient is a mock implementation of the GitHubIntegrator for testing.
 type MockGitHubClient struct {
-	CreateCheckRunFunc func(ctx context.Context, repository string, headSHA string, name string) (int64, error)
-	UpdateCheckRunFunc func(ctx context.Context, repository string, checkRunID int64, opts UpdateCheckRunOptions) error
+	CreateCheckRunFunc         func(ctx context.Context, repository string, headSHA string, name string) (int64, error)
+	UpdateCheckRunFunc         func(ctx context.Context, repository string, checkRunID int64, opts UpdateCheckRunOptions) error
+	FetchRepositoryContextFunc func(ctx context.Context, repository string, headSHA string) (string, error)
 }
 
 func (m *MockGitHubClient) CreateCheckRun(ctx context.Context, repository string, headSHA string, name string) (int64, error) {
@@ -26,6 +27,13 @@ func (m *MockGitHubClient) UpdateCheckRun(ctx context.Context, repository string
 		return m.UpdateCheckRunFunc(ctx, repository, checkRunID, opts)
 	}
 	return nil
+}
+
+func (m *MockGitHubClient) FetchRepositoryContext(ctx context.Context, repository string, headSHA string) (string, error) {
+	if m.FetchRepositoryContextFunc != nil {
+		return m.FetchRepositoryContextFunc(ctx, repository, headSHA)
+	}
+	return "# Mock Repo Context\nThis is a test repository context configuration.", nil
 }
 
 func TestAnalyzeHandler_MethodNotAllowed(t *testing.T) {
