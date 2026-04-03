@@ -13,7 +13,7 @@ import (
 // LLMIntegrator defines the interface for interacting with Large Language Models.
 type LLMIntegrator interface {
 	// AnalyzeCode asynchronously analyzes a single file patch.
-	AnalyzeCode(ctx context.Context, filename string, patch string) (*LLMAnalysisResult, error)
+	AnalyzeCode(ctx context.Context, filename string, patch string, repoContext string) (*LLMAnalysisResult, error)
 }
 
 // LLMAnalysisResult matches the JSON schema we will force the LLM to output.
@@ -44,13 +44,20 @@ func NewClaudeClient(apiKey string) *DefaultClaudeClient {
 }
 
 // AnalyzeCode submits the diff to Claude and parses the JSON response.
-func (c *DefaultClaudeClient) AnalyzeCode(ctx context.Context, filename string, patch string) (*LLMAnalysisResult, error) {
+func (c *DefaultClaudeClient) AnalyzeCode(ctx context.Context, filename string, patch string, repoContext string) (*LLMAnalysisResult, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("anthropic api key not configured")
 	}
 
-	prompt := fmt.Sprintf(`Analyze the following code patch for file '%s'. 
-Tell me two things: is this code likely AI-generated, and does it introduce any hidden business logic or semantic risks? 
+	contextAddendum := ""
+	if repoContext != "" {
+		// If we have architectural context, inject it into the prompt.
+		contextAddendum = fmt.Sprintf("\nArchitectural Context (README):\n%s\n", repoContext)
+	}
+
+	prompt := fmt.Sprintf(`Analyze the following code patch for file '%s'.
+Tell me two things: is this code likely AI-generated, and does it introduce any hidden business logic or semantic risks?%s
+
 Please respond ONLY with valid JSON strictly matching this structure:
 {
   "aiScore": 0.85,
@@ -63,7 +70,7 @@ Please respond ONLY with valid JSON strictly matching this structure:
 Do not include any markdown blocks containing "json" or other text outside of the raw JSON object.
 
 Code Patch:
-%s`, filename, patch)
+%s`, filename, contextAddendum, patch)
 
 	payload := map[string]interface{}{
 		"model":      c.model,
