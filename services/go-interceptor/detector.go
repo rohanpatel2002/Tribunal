@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"regexp"
@@ -21,7 +22,28 @@ var (
 	criticalRiskRegex      = regexp.MustCompile(`(?i)(drop table|truncate|delete from|lock table|payment|transaction|non-idempotent|downtime)`)
 )
 
-func AnalyzeFile(file ChangedFile) FileAnalysis {
+func AnalyzeFile(ctx context.Context, file ChangedFile, llm LLMIntegrator) FileAnalysis {
+	// If we have an LLM configured, try that first for accurate AI risk scoring
+	if llm != nil {
+		llmRes, err := llm.AnalyzeCode(ctx, file.Path, file.Patch)
+		if err == nil && llmRes != nil {
+			return FileAnalysis{
+				Path:          file.Path,
+				AIScore:       llmRes.AIScore,
+				IsAIGenerated: llmRes.IsAIGenerated,
+				Confidence:    llmRes.Confidence,
+				RiskLevel:     llmRes.RiskLevel,
+				Summary:       llmRes.Summary,
+				Signals: SignalBreakdown{
+					Style:   0,
+					Pattern: 0,
+					Risk:    0,
+				},
+			}
+		}
+		// Fallback to heuristic scoring if LLM fails
+	}
+
 	patch := truncate(file.Patch, maxPatchLength)
 	styleScore := scoreStyleSignal(patch)
 	patternScore := scorePatternSignal(patch)
@@ -154,12 +176,12 @@ func classifyRisk(riskScore float64) string {
 	}
 }
 
-func BuildResponse(req AnalyzeRequest) AnalyzeResponse {
+func BuildResponse(ctx context.Context, req AnalyzeRequest, llm LLMIntegrator) AnalyzeResponse {
 	results := make([]FileAnalysis, 0, len(req.Files))
 	summary := AnalysisSummary{TotalFiles: len(req.Files)}
 
 	for _, file := range req.Files {
-		res := AnalyzeFile(file)
+		res := AnalyzeFile(ctx, file, llm)
 		results = append(results, res)
 
 		if res.IsAIGenerated {
