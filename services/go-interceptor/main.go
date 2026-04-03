@@ -35,16 +35,25 @@ func main() {
 		slog.Info("DATABASE_URL not set, running interceptor without database persistence")
 	}
 
-	ghToken := os.Getenv("GITHUB_TOKEN")
+	githubToken := os.Getenv("GITHUB_TOKEN")
 	var ghClient GitHubIntegrator
-	if ghToken != "" {
-		ghClient = NewGitHubClient(ghToken)
-		slog.Info("GitHub client configured")
+	if githubToken != "" {
+		ghClient = NewGitHubClient(githubToken)
+		slog.Info("GitHub client initialized")
 	} else {
-		slog.Warn("GITHUB_TOKEN not set; check-runs will be disabled")
+		slog.Info("GITHUB_TOKEN not set, running without GitHub integrations")
 	}
 
-	h := NewHandler(repo, ghClient)
+	anthropicAPIKey := os.Getenv("ANTHROPIC_API_KEY")
+	var llmClient LLMIntegrator
+	if anthropicAPIKey != "" {
+		llmClient = NewClaudeClient(anthropicAPIKey)
+		slog.Info("Anthropic LLM client initialized")
+	} else {
+		slog.Info("ANTHROPIC_API_KEY not set, using heuristic analysis only")
+	}
+
+	h := NewHandler(repo, ghClient, llmClient)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.healthHandler)
