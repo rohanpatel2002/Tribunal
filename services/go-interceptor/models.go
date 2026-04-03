@@ -26,6 +26,7 @@ type FileAnalysis struct {
 	Signals       SignalBreakdown `json:"signals"`
 	RiskLevel     string          `json:"riskLevel"`
 	Summary       string          `json:"summary"`
+	SuggestedFix  string          `json:"suggestedFix,omitempty"`
 }
 
 type AnalysisSummary struct {
