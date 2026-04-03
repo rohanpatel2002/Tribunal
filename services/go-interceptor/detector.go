@@ -35,6 +35,7 @@ func AnalyzeFile(ctx context.Context, file ChangedFile, llm LLMIntegrator, repoC
 				Confidence:    llmRes.Confidence,
 				RiskLevel:     llmRes.RiskLevel,
 				Summary:       llmRes.Summary,
+				SuggestedFix:  llmRes.SuggestedFix,
 				Signals: SignalBreakdown{
 					Style:   0,
 					Pattern: 0,
