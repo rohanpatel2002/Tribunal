@@ -1,13 +1,13 @@
 package main
 
 import (
-"bytes"
-"context"
-"encoding/json"
-"fmt"
-"io"
-"net/http"
-"time"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
 )
 
 // LLMIntegrator defines the interface for interacting with Large Language Models.
