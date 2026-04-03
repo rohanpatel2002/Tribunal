@@ -23,6 +23,7 @@ type LLMAnalysisResult struct {
 	Confidence    float64 `json:"confidence"`    // 0.0 to 1.0 confidence in assessment
 	RiskLevel     string  `json:"riskLevel"`     // LOW, MEDIUM, HIGH, CRITICAL
 	Summary       string  `json:"summary"`       // Short contextual briefing for the reviewer
+	SuggestedFix  string  `json:"suggestedFix"`  // A raw code block providing the remediated code
 }
 
 // DefaultClaudeClient implements LLMIntegrator using the Anthropic Messages API.
@@ -58,13 +59,16 @@ func (c *DefaultClaudeClient) AnalyzeCode(ctx context.Context, filename string, 
 	prompt := fmt.Sprintf(`Analyze the following code patch for file '%s'.
 Tell me two things: is this code likely AI-generated, and does it introduce any hidden business logic or semantic risks?%s
 
+If there is a severe semantic risk or architectural violation, provide the exact valid code block to fix the developer's PR in the 'suggestedFix' field. If no fix is required, leave 'suggestedFix' empty.
+
 Please respond ONLY with valid JSON strictly matching this structure:
 {
   "aiScore": 0.85,
   "isAIGenerated": true,
   "confidence": 0.90,
   "riskLevel": "HIGH",
-  "summary": "Explanation of risks or AI artifacts here."
+  "summary": "Explanation of risks or AI artifacts here.",
+  "suggestedFix": "func retry() {\n  // secure idempotent implementation\n}"
 }
 
 Do not include any markdown blocks containing "json" or other text outside of the raw JSON object.
