@@ -28,11 +28,12 @@ type GitHubWebhookPayload struct {
 type Handler struct {
 	repo         Repository
 	githubClient GitHubIntegrator
+	llmClient    LLMIntegrator
 }
 
 // NewHandler creates a new HTTP handler with the given repository and GitHub client.
-func NewHandler(repo Repository, gh GitHubIntegrator) *Handler {
-	return &Handler{repo: repo, githubClient: gh}
+func NewHandler(repo Repository, gh GitHubIntegrator, llm LLMIntegrator) *Handler {
+	return &Handler{repo: repo, githubClient: gh, llmClient: llm}
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -98,7 +99,7 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := BuildResponse(req)
+	resp := BuildResponse(r.Context(), req, h.llmClient)
 
 	// Persist the analysis if a repository is configured
 	if h.repo != nil {
@@ -169,12 +170,52 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		Files:      payload.TribunalFiles,
 	}
 
-	resp := BuildResponse(req)
+	// Initialize Check Run if we have a GitHub Client + a Commit SHA
+	var checkRunID int64
+	if h.githubClient != nil && payload.PullRequest.Head.Sha != "" {
+		crID, err := h.githubClient.CreateCheckRun(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha, "TRIBUNAL AI Analysis")
+		if err != nil {
+			slog.Warn("failed to create check run", "error", err)
+		} else {
+			checkRunID = crID
+		}
+	}
+
+	resp := BuildResponse(r.Context(), req, h.llmClient)
 
 	// Persist to database
 	if h.repo != nil {
 		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
 			slog.Warn("failed to save webhook analysis to DB", "error", err)
+		}
+	}
+
+	// Update Check Run with Final Markdown
+	if h.githubClient != nil && checkRunID > 0 {
+		markdownBody := GenerateContextBriefing(&resp)
+
+		conclusion := "success"
+		if resp.Summary.Recommendation == "BLOCK" {
+			conclusion = "failure"
+		} else if resp.Summary.Recommendation == "REVIEW_REQUIRED" {
+			conclusion = "neutral"
+		}
+
+		title := fmt.Sprintf("Analysis Complete: %s", resp.Summary.Recommendation)
+		shortSummary := fmt.Sprintf("Analyzed %d files: %d Critical, %d High Risk.", resp.Summary.TotalFiles, resp.Summary.Critical, resp.Summary.High)
+
+		updateOpts := UpdateCheckRunOptions{
+			Status:     "completed",
+			Conclusion: conclusion,
+			Output: CheckRunOutput{
+				Title:   title,
+				Summary: shortSummary,
+				Text:    markdownBody,
+			},
+		}
+
+		if err := h.githubClient.UpdateCheckRun(r.Context(), payload.Repository.FullName, checkRunID, updateOpts); err != nil {
+			slog.Warn("failed to update github check run", "error", err)
 		}
 	}
 
