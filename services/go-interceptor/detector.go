@@ -1,13 +1,13 @@
 package main
 
 import (
-        "context"
-        "fmt"
-        "log/slog"
-        "math"
-        "regexp"
-        "strings"
-        "sync"
+	"context"
+	"fmt"
+	"log/slog"
+	"math"
+	"regexp"
+	"strings"
+	"sync"
 )
 
 const (
