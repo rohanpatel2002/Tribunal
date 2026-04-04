@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"strings"
@@ -45,6 +46,9 @@ func AnalyzeFile(ctx context.Context, file ChangedFile, llm LLMIntegrator, repoC
 			}
 		}
 		// Fallback to heuristic scoring if LLM fails
+		if err != nil {
+			slog.Warn("LLM analysis failed, falling back to heuristic engine", "file", file.Path, "error", err)
+		}
 	}
 
 	patch := truncate(file.Patch, maxPatchLength)
