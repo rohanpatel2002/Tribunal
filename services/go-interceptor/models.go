@@ -45,3 +45,13 @@ type AnalyzeResponse struct {
 	Summary    AnalysisSummary `json:"summary"`
 	Results    []FileAnalysis  `json:"results"`
 }
+
+type AuditSummary struct {
+	Repository     string  `json:"repository"`
+	TotalPRs       int     `json:"totalPRs"`
+	TotalFiles     int     `json:"totalFiles"`
+	AIGeneratedPRs int     `json:"aiGeneratedPRs"`
+	CriticalRisks  int     `json:"criticalRisks"`
+	HighRisks      int     `json:"highRisks"`
+	AverageAIScore float64 `json:"averageAIScore"`
+}

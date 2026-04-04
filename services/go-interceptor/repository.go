@@ -26,4 +26,7 @@ type Repository interface {
 	// MarkWebhookProcessed attempts to record a webhook delivery ID.
 	// Returns true if successfully recorded, or false if it was already processed.
 	MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error)
+
+	// GetRepositoryAuditSummary aggregates high-level historical analytics for enterprise reporting.
+	GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error)
 }
