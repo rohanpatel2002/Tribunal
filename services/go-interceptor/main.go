@@ -60,6 +60,7 @@ func main() {
 	mux.HandleFunc("/analyze", h.analyzeHandler)
 	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
+	mux.HandleFunc("/api/v1/audit/summary", h.getAuditSummaryHandler)
 
 	addr := ":" + port
 	slog.Info("go-interceptor starting", "addr", addr)
