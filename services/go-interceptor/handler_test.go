@@ -149,6 +149,7 @@ type MockRepository struct {
 	SaveFunc                 func(ctx context.Context, response *AnalyzeResponse) error
 	GetFunc                  func(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error)
 	MarkWebhookProcessedFunc func(ctx context.Context, deliveryID string, repoFullName string) (bool, error)
+	GetAuditSummaryFunc      func(ctx context.Context, repository string) (*AuditSummary, error)
 }
 
 func (m *MockRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResponse) error {
@@ -170,6 +171,19 @@ func (m *MockRepository) MarkWebhookProcessed(ctx context.Context, deliveryID st
 		return m.MarkWebhookProcessedFunc(ctx, deliveryID, repoFullName)
 	}
 	return true, nil
+}
+
+func (m *MockRepository) GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error) {
+	if m.GetAuditSummaryFunc != nil {
+		return m.GetAuditSummaryFunc(ctx, repository)
+	}
+	return &AuditSummary{
+		Repository:     repository,
+		TotalPRs:       10,
+		TotalFiles:     50,
+		AIGeneratedPRs: 2,
+		CriticalRisks:  1,
+	}, nil
 }
 
 func TestGetAnalysisHandler_Success(t *testing.T) {

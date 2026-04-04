@@ -20,6 +20,13 @@ func main() {
 		port = "8080"
 	}
 
+	enterpriseAPIKey := os.Getenv("TRIBUNAL_API_KEY")
+	if enterpriseAPIKey != "" {
+		slog.Info("Enterprise API Authorization enabled")
+	} else {
+		slog.Warn("TRIBUNAL_API_KEY not set! Sensitive endpoints like /analyze will be unprotected (development mode).")
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	var repo Repository
 	if dbURL != "" {
@@ -56,10 +63,24 @@ func main() {
 	h := NewHandler(repo, ghClient, llmClient)
 
 	mux := http.NewServeMux()
+
+	// Public Health Check
 	mux.HandleFunc("/health", h.healthHandler)
-	mux.HandleFunc("/analyze", h.analyzeHandler)
+
+	// Webhooks (Authorized internally mostly by GitHub signature, though not implemented yet; let's keep it open for now)
 	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
+
+	// Public read endpoint for specific PRs
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
+
+	// Protect internal tools and audit summaries with Enterprise API Keys if configured.
+	if enterpriseAPIKey != "" {
+		mux.HandleFunc("/analyze", RequireAuth(enterpriseAPIKey, h.analyzeHandler))
+		mux.HandleFunc("/api/v1/audit/summary", RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler))
+	} else {
+		mux.HandleFunc("/analyze", h.analyzeHandler)
+		mux.HandleFunc("/api/v1/audit/summary", h.getAuditSummaryHandler)
+	}
 
 	addr := ":" + port
 	slog.Info("go-interceptor starting", "addr", addr)
