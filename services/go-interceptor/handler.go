@@ -82,6 +82,33 @@ func (h *Handler) getAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, analysis)
 }
 
+func (h *Handler) getAuditSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	repoName := r.URL.Query().Get("repo")
+	if repoName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing 'repo' query parameter"})
+		return
+	}
+
+	if h.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database persistence is not configured"})
+		return
+	}
+
+	summary, err := h.repo.GetRepositoryAuditSummary(r.Context(), repoName)
+	if err != nil {
+		slog.Error("database error fetching audit summary", "repo", repoName, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, summary)
+}
+
 // analyzeHandler supports manual invocations without GitHub webhooks
 func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

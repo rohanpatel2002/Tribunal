@@ -208,3 +208,47 @@ func (r *PostgresRepository) MarkWebhookProcessed(ctx context.Context, deliveryI
 	// If RowsAffected is 0, the delivery_id was already present (due to ON CONFLICT)
 	return commandTag.RowsAffected() > 0, nil
 }
+
+// GetRepositoryAuditSummary computes aggregate analytics for a given repository payload.
+func (r *PostgresRepository) GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error) {
+	query := `
+                SELECT 
+                        COUNT(id) as total_prs,
+                        COALESCE(SUM(total_files), 0) as total_files,
+                        COALESCE(SUM(CASE WHEN ai_generated > 0 THEN 1 ELSE 0 END), 0) as ai_generated_prs,
+                        COALESCE(SUM(critical), 0) as critical_risks,
+                        COALESCE(SUM(high), 0) as high_risks
+                FROM pr_analyses
+                WHERE repository = $1
+        `
+
+	summary := &AuditSummary{
+		Repository: repository,
+	}
+
+	err := r.pool.QueryRow(ctx, query, repository).Scan(
+		&summary.TotalPRs,
+		&summary.TotalFiles,
+		&summary.AIGeneratedPRs,
+		&summary.CriticalRisks,
+		&summary.HighRisks,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute audit summary for repo %s: %w", repository, err)
+	}
+
+	// Calculate average AI score across all analyzed files for this repo
+	avgQuery := `
+                SELECT COALESCE(AVG(fa.ai_score), 0)
+                FROM file_analyses fa
+                JOIN pr_analyses pa ON fa.pr_analysis_id = pa.id
+                WHERE pa.repository = $1
+        `
+	if err := r.pool.QueryRow(ctx, avgQuery, repository).Scan(&summary.AverageAIScore); err != nil {
+		// If it fails, assume 0
+		summary.AverageAIScore = 0
+	}
+
+	return summary, nil
+}
