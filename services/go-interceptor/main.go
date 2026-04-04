@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"time"
 )
 
 func init() {
@@ -83,9 +85,37 @@ func main() {
 	}
 
 	addr := ":" + port
-	slog.Info("go-interceptor starting", "addr", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 45 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Graceful shutdown channel
+	idleConnsClosed := make(chan struct{})
+	go func() {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+		defer stop()
+
+		<-ctx.Done()
+		slog.Info("shutting down gracefully, pressing Ctrl+C again will force exit")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Error("server shutdown error", "error", err)
+		}
+		close(idleConnsClosed)
+	}()
+
+	slog.Info("go-interceptor starting", "addr", addr)
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		slog.Error("server failed critically", "error", err)
+	}
+
+	<-idleConnsClosed
+	slog.Info("go-interceptor gracefully stopped")
 }
