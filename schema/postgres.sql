@@ -42,3 +42,22 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
     repository VARCHAR(255) NOT NULL,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ENTERPRISE SAAS SCHEMA: Multi-Tenant Organizations and Subscriptions
+CREATE TABLE IF NOT EXISTS organizations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) UNIQUE NOT NULL,
+    api_key VARCHAR(128) UNIQUE DEFAULT gen_random_uuid()::varchar,
+    subscription_tier VARCHAR(32) NOT NULL DEFAULT 'FREE', -- 'FREE', 'TEAM', 'ENTERPRISE'
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS repositories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    full_name VARCHAR(255) UNIQUE NOT NULL, -- e.g., 'rohanpatel2002/tribunal'
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_repositories_org_id ON repositories(organization_id);

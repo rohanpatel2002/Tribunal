@@ -192,10 +192,23 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		Files:      payload.TribunalFiles,
 	}
 
+	// Tier validation
+	tier := "FREE"
+	if h.repo != nil {
+		fetchedTier, err := h.repo.GetSubscriptionTier(r.Context(), payload.Repository.FullName)
+		if err == nil {
+			tier = fetchedTier
+		} else {
+			slog.Warn("failed to fetch subscription tier, defaulting to FREE", "error", err)
+		}
+	}
+	slog.Info("operating under SaaS context", "repo", payload.Repository.FullName, "tier", tier)
+
 	// 1. Initialize Check Run if we have a GitHub Client + a Commit SHA
 	var checkRunID int64
 	repoContext := ""
 
+	// SaaS Logic: Only allow God-Mode context fetch for non-FREE tiers
 	if h.githubClient != nil && payload.PullRequest.Head.Sha != "" {
 		crID, err := h.githubClient.CreateCheckRun(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha, "TRIBUNAL AI God-Mode")
 		if err != nil {
@@ -204,18 +217,26 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			checkRunID = crID
 		}
 
-		// 2. Fetch God-Mode Architectural Context (e.g. README.md) dynamically
-		contextStr, fetchErr := h.githubClient.FetchRepositoryContext(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha)
-		if fetchErr != nil {
-			slog.Warn("failed to fetch god-mode context, reverting to standard knowledge limits", "error", fetchErr)
+		if tier != "FREE" {
+			contextStr, fetchErr := h.githubClient.FetchRepositoryContext(r.Context(), payload.Repository.FullName, payload.PullRequest.Head.Sha)
+			if fetchErr != nil {
+				slog.Warn("failed to fetch god-mode context", "error", fetchErr)
+			} else {
+				repoContext = contextStr
+			}
 		} else {
-			slog.Info("successfully gathered architectural context from GitHub", "bytesLen", len(contextStr))
-			repoContext = contextStr
+			slog.Info("FREE tier detected; skipping repository context ingestion limits")
 		}
 	}
 
-	// 3. Analyze the patches with LLM, passing along the God-Mode context
-	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
+	// Prevent Anthropic LLM API calls completely on the FREE tier
+	activeLLM := h.llmClient
+	if tier == "FREE" {
+		activeLLM = nil
+	}
+
+	// 3. Analyze the patches with LLM (or fallback heuristic if FREE/nil), passing along the context
+	resp := BuildResponse(r.Context(), req, activeLLM, repoContext)
 
 	// 4. Persist to database
 	if h.repo != nil {
