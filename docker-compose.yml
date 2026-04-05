@@ -36,9 +36,24 @@ services:
       - PORT=8080
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - TRIBUNAL_API_KEY=dev_enterprise_key_123 # Demo API key for dashboard
     depends_on:
       db:
         condition: service_healthy
+
+  # React Enterprise Dashboard
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: tribunal_dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    depends_on:
+      - interceptor
 
 volumes:
   # Persistent volume so AI analysis data isn't deleted if the container stops
