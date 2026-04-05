@@ -71,6 +71,8 @@ func main() {
 
 	// Webhooks (Authorized internally mostly by GitHub signature, though not implemented yet; let's keep it open for now)
 	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
+	mux.HandleFunc("/webhook/gitlab", h.gitlabWebhookHandler)
+	mux.HandleFunc("/webhook/bitbucket", h.bitbucketWebhookHandler)
 
 	// Public read endpoint for specific PRs
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
