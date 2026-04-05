@@ -10,6 +10,13 @@ var (
 	ErrAnalysisNotFound = errors.New("analysis not found")
 )
 
+// Organization models an enterprise tenant.
+type Organization struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	SubscriptionTier string `json:"subscriptionTier"`
+}
+
 // Repository defines the data access layer for PR analysis results.
 // This interface allows us to easily mock the database during tests
 // and abstract the underlying storage mechanism.
@@ -29,4 +36,7 @@ type Repository interface {
 
 	// GetRepositoryAuditSummary aggregates high-level historical analytics for enterprise reporting.
 	GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error)
+
+	// GetSubscriptionTier queries the organization linked to the repository. Returns 'FREE' by default if no mapping exists.
+	GetSubscriptionTier(ctx context.Context, repoFullName string) (string, error)
 }
