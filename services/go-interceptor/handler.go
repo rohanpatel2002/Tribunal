@@ -24,6 +24,31 @@ type GitHubWebhookPayload struct {
 	TribunalFiles []ChangedFile `json:"tribunal_files"`
 }
 
+type GitLabWebhookPayload struct {
+	ObjectKind string `json:"object_kind"`
+	Project    struct {
+		PathWithNamespace string `json:"path_with_namespace"`
+	} `json:"project"`
+	ObjectAttributes struct {
+		Iid        int    `json:"iid"`
+		Action     string `json:"action"`
+		LastCommit struct {
+			Id string `json:"id"`
+		} `json:"last_commit"`
+	} `json:"object_attributes"`
+	TribunalFiles []ChangedFile `json:"tribunal_files"`
+}
+
+type BitbucketWebhookPayload struct {
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+	PullRequest struct {
+		Id int `json:"id"`
+	} `json:"pullrequest"`
+	TribunalFiles []ChangedFile `json:"tribunal_files"`
+}
+
 // Handler holds the application's external dependencies (like the database).
 type Handler struct {
 	repo         Repository
@@ -107,39 +132,6 @@ func (h *Handler) getAuditSummaryHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, summary)
-}
-
-// analyzeHandler supports manual invocations without GitHub webhooks
-func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-
-	var req AnalyzeRequest
-	if err := decodeJSONBody(r.Body, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	if err := validateAnalyzeRequest(req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	// For manual test runs without webhook context
-	repoContext := ""
-	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
-
-	// Persist the analysis if a repository is configured
-	if h.repo != nil {
-		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
-			slog.Warn("failed to save analysis to DB", "error", err)
-			// We do not fail the request if the DB save fails, just log it.
-		}
-	}
-
-	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +250,148 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.githubClient.UpdateCheckRun(r.Context(), payload.Repository.FullName, checkRunID, updateOpts); err != nil {
 			slog.Warn("failed to update github check run", "error", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) gitlabWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	// GitLab sends X-Gitlab-Event
+	event := r.Header.Get("X-Gitlab-Event")
+	if event == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Gitlab-Event header"})
+		return
+	}
+
+	var payload GitLabWebhookPayload
+	if err := decodeJSONBody(r.Body, &payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Basic validation for Merge Request logic
+	if payload.ObjectAttributes.Iid == 0 || strings.TrimSpace(payload.Project.PathWithNamespace) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "missing required fields: project.path_with_namespace or object_attributes.iid",
+		})
+		return
+	}
+
+	if len(payload.TribunalFiles) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "webhook payload missing tribunal_files",
+		})
+		return
+	}
+
+	req := AnalyzeRequest{
+		Repository: payload.Project.PathWithNamespace,
+		PRNumber:   payload.ObjectAttributes.Iid,
+		Files:      payload.TribunalFiles,
+	}
+
+	// Normally we would have a GitLab client to fetch context like with GitHub.
+	// For MVPs, we assume heuristic or LLM with no God-Mode Context.
+	repoContext := ""
+
+	// 1. Analyze the patches with LLM
+	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
+
+	// 2. Persist to database
+	if h.repo != nil {
+		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
+			slog.Warn("failed to save gitlab webhook analysis to DB", "error", err)
+		}
+	}
+
+	// 3. A complete implementation would write back comments to GitLab MR API here.
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) bitbucketWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	// Bitbucket sends X-Event-Key
+	event := r.Header.Get("X-Event-Key")
+	if event == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Event-Key header"})
+		return
+	}
+
+	var payload BitbucketWebhookPayload
+	if err := decodeJSONBody(r.Body, &payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if payload.PullRequest.Id == 0 || strings.TrimSpace(payload.Repository.FullName) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "missing required fields: repository.full_name or pullrequest.id",
+		})
+		return
+	}
+
+	if len(payload.TribunalFiles) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "webhook payload missing tribunal_files",
+		})
+		return
+	}
+
+	req := AnalyzeRequest{
+		Repository: payload.Repository.FullName,
+		PRNumber:   payload.PullRequest.Id,
+		Files:      payload.TribunalFiles,
+	}
+
+	repoContext := ""
+	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
+
+	if h.repo != nil {
+		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
+			slog.Warn("failed to save bitbucket webhook analysis to DB", "error", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req AnalyzeRequest
+	if err := decodeJSONBody(r.Body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := validateAnalyzeRequest(req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// For manual test runs without webhook context
+	repoContext := ""
+	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
+
+	// Persist the analysis if a repository is configured
+	if h.repo != nil {
+		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
+			slog.Warn("failed to save analysis to DB", "error", err)
+			// We do not fail the request if the DB save fails, just log it.
 		}
 	}
 
