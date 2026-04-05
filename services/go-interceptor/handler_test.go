@@ -120,15 +120,10 @@ func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 }
 
 func TestGithubWebhookHandler_AlreadyProcessed(t *testing.T) {
-	// Mock a DB where MarkWebhookProcessed returns false (meaning it was already processed)
 	mockRepo := &MockRepository{
-		MarkWebhookProcessedFunc: func(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
-			return false, nil
-		},
+		processed: map[string]bool{"duplicate-delivery-id-999": true},
 	}
-
-	h := NewHandler(mockRepo, &MockGitHubClient{}, nil)
-
+	h := NewHandler(mockRepo, nil, nil)
 	payload := `{"action":"opened","repository":{"full_name":"rohanpatel2002/tribunal"},"pull_request":{"number":9,"head":{"sha":"abc123def"}},"tribunal_files":[{"path":"main.go","status":"modified","patch":"test"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(payload))
 	req.Header.Set("X-GitHub-Delivery", "duplicate-delivery-id-999")
@@ -150,6 +145,7 @@ type MockRepository struct {
 	GetFunc                  func(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error)
 	MarkWebhookProcessedFunc func(ctx context.Context, deliveryID string, repoFullName string) (bool, error)
 	GetAuditSummaryFunc      func(ctx context.Context, repository string) (*AuditSummary, error)
+	processed                map[string]bool
 }
 
 func (m *MockRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResponse) error {
@@ -167,23 +163,21 @@ func (m *MockRepository) GetAnalysisByPR(ctx context.Context, repository string,
 }
 
 func (m *MockRepository) MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
-	if m.MarkWebhookProcessedFunc != nil {
-		return m.MarkWebhookProcessedFunc(ctx, deliveryID, repoFullName)
+	if m.processed[deliveryID] {
+		return false, nil
 	}
+	m.processed[deliveryID] = true
 	return true, nil
 }
 
 func (m *MockRepository) GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error) {
-	if m.GetAuditSummaryFunc != nil {
-		return m.GetAuditSummaryFunc(ctx, repository)
-	}
 	return &AuditSummary{
-		Repository:     repository,
-		TotalPRs:       10,
-		TotalFiles:     50,
-		AIGeneratedPRs: 2,
-		CriticalRisks:  1,
+		Repository: repository,
 	}, nil
+}
+
+func (m *MockRepository) GetSubscriptionTier(ctx context.Context, repoFullName string) (string, error) {
+	return "FREE", nil
 }
 
 func TestGetAnalysisHandler_Success(t *testing.T) {
