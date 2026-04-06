@@ -14,7 +14,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Automatically initialize tables when the container boots for the first time
-      - ./schema/postgres.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./schema/postgres.sql:/docker-entrypoint-initdb.d/01_init.sql
+      - ./schema/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tribunal -d tribunal_db"]
       interval: 5s
