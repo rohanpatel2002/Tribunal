@@ -201,15 +201,19 @@ The absolute fastest way to boot TRIBUNAL is using our `docker-compose` orchestr
 
 2. Boot the cluster in detached mode:
    ```bash
-   docker-compose up -d
+   docker-compose up -d --build
    ```
 
-3. **Profit.** Your service is now live on `localhost:8080`.
+3. **Verify the Go Webhook Engine.** Your service is now live on `localhost:8080`.
    You can verify it by hitting the health endpoint:
    ```bash
    curl -s http://localhost:8080/health
    # Expected: {"service":"go-interceptor","status":"ok"}
    ```
+
+4. **Access the CTO Audit Dashboard.** Your premium Next.js UI is now hosted on `localhost:3000`.
+   - Open [http://localhost:3000](http://localhost:3000) in your browser.
+   - Use the sample Enterprise API Key: `dev_enterprise_key_123` to query the seeded demo database!
 
 ### Stopping the Cluster
 To gracefully stop the application while preserving your database volumes:
