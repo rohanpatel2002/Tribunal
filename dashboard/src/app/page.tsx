@@ -43,15 +43,16 @@ export default function Dashboard() {
           averageAIScore: 0.68
         });
       }
-    } catch (e) {
+      } catch (e) {
+      console.warn("Using offline demo data mode:", e);
       setData({
         repository: repo,
-        totalPRs: 142,
-        totalFiles: 845,
-        aiGeneratedPRs: 37,
-        criticalRisks: 4,
-        highRisks: 12,
-        averageAIScore: 0.68
+        totalPRs: 0,
+        totalFiles: 0,
+        aiGeneratedPRs: 0,
+        criticalRisks: 0,
+        highRisks: 0,
+        averageAIScore: 0.0
       });
     } finally {
       setLoading(false);
@@ -157,15 +158,22 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col">
-              <h3 className="text-lg font-medium text-white mb-6">System Health</h3>
-              <div className="flex-1 flex flex-col items-center justify-center">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col relative overflow-hidden">
+              <h3 className="text-lg font-medium text-white mb-6 z-10">System Health Trend</h3>
+              <div className="flex-1 flex flex-col items-center justify-center z-10">
                 <div className="w-32 h-32 rounded-full border-[8px] border-indigo-500 flex items-center justify-center mb-4 relative drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
                   <span className="text-2xl font-bold">{(data?.averageAIScore || 0) * 100}%</span>
                 </div>
                 <p className="text-center text-sm text-gray-400 mt-2">
                   Average AI Generation Probability across <strong className="text-gray-200">24h</strong> trailing window.
                 </p>
+              </div>
+              
+              {/* Decorative mini bar chart in background */}
+              <div className="absolute bottom-0 left-0 w-full h-24 flex items-end gap-1 px-4 opacity-20 pointer-events-none">
+                {[40, 70, 45, 90, 65, 80, 50, 85, 60, 95, 75, 65, 88].map((h, i) => (
+                  <div key={i} className="bg-indigo-500 w-full rounded-t-sm" style={{ height: `${h}%` }}></div>
+                ))}
               </div>
             </div>
           </div>
