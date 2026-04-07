@@ -264,3 +264,33 @@ func (r *PostgresRepository) GetSubscriptionTier(ctx context.Context, repoFullNa
 
 	return tier, nil
 }
+
+// GetRecentAnalyses grabs the most recent PR results to populate the enterprise audit log table.
+func (r *PostgresRepository) GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error) {
+	query := `
+        SELECT id::text, repository, pr_number, recommendation, total_files, ai_generated, critical, high, medium, low
+        FROM pr_analyses
+        WHERE repository = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        `
+	rows, err := r.pool.Query(ctx, query, repository, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed querying recent PR analyses: %w", err)
+	}
+	defer rows.Close()
+
+	var results []PRAnalysisRecord
+	for rows.Next() {
+		var rec PRAnalysisRecord
+		if err := rows.Scan(
+			&rec.ID, &rec.Repository, &rec.PRNumber, &rec.Recommendation,
+			&rec.TotalFiles, &rec.AIGenerated, &rec.Critical, &rec.High,
+			&rec.Medium, &rec.Low,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning PR logs row: %w", err)
+		}
+		results = append(results, rec)
+	}
+	return results, rows.Err()
+}
