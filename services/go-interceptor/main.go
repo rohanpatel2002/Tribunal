@@ -89,9 +89,11 @@ func main() {
 	if enterpriseAPIKey != "" {
 		mux.HandleFunc("/analyze", RequireAuth(enterpriseAPIKey, h.analyzeHandler))
 		mux.HandleFunc("/api/v1/audit/summary", RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler))
+		mux.HandleFunc("/api/v1/audit/logs", RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler))
 	} else {
 		mux.HandleFunc("/analyze", h.analyzeHandler)
 		mux.HandleFunc("/api/v1/audit/summary", h.getAuditSummaryHandler)
+		mux.HandleFunc("/api/v1/audit/logs", h.getAuditLogsHandler)
 	}
 
 	addr := ":" + port

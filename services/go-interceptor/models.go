@@ -55,3 +55,16 @@ type AuditSummary struct {
 	HighRisks      int     `json:"highRisks"`
 	AverageAIScore float64 `json:"averageAIScore"`
 }
+
+type PRAnalysisRecord struct {
+	ID             string `json:"id"`
+	Repository     string `json:"repository"`
+	PRNumber       int    `json:"prNumber"`
+	Recommendation string `json:"recommendation"`
+	TotalFiles     int    `json:"totalFiles"`
+	AIGenerated    int    `json:"aiGenerated"`
+	Critical       int    `json:"critical"`
+	High           int    `json:"high"`
+	Medium         int    `json:"medium"`
+	Low            int    `json:"low"`
+}
