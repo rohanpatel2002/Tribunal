@@ -22,6 +22,14 @@ func main() {
 		port = "8080"
 	}
 
+	customRisk := os.Getenv("ENTERPRISE_CUSTOM_RISK_KEYWORDS")
+	customCritical := os.Getenv("ENTERPRISE_CUSTOM_CRITICAL_KEYWORDS")
+
+	if customRisk != "" || customCritical != "" {
+		InitCustomRules(customRisk, customCritical)
+		slog.Info("Loaded custom enterprise rules engine", "customRisk", customRisk, "customCritical", customCritical)
+	}
+
 	enterpriseAPIKey := os.Getenv("TRIBUNAL_API_KEY")
 	if enterpriseAPIKey != "" {
 		slog.Info("Enterprise API Authorization enabled")
