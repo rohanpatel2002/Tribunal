@@ -24,6 +24,16 @@ var (
 	criticalRiskRegex      = regexp.MustCompile(`(?i)(drop table|truncate|delete from|lock table|payment|transaction|non-idempotent|downtime)`)
 )
 
+// InitCustomRules injects enterprise-specific keywords into the static threshold engine
+func InitCustomRules(customRisk string, customCritical string) {
+	if customRisk != "" {
+		riskKeywordRegex = regexp.MustCompile(`(?i)(` + riskKeywordRegex.String()[4:] + `|` + customRisk + `)`)
+	}
+	if customCritical != "" {
+		criticalRiskRegex = regexp.MustCompile(`(?i)(` + criticalRiskRegex.String()[4:] + `|` + customCritical + `)`)
+	}
+}
+
 // AnalyzeFile evaluates a single changed file using either dynamic God-Mode context LLM or deterministic heuristics.
 func AnalyzeFile(ctx context.Context, file ChangedFile, llm LLMIntegrator, repoContext string) FileAnalysis {
 	// If we have an LLM configured, try that first for accurate AI risk scoring
