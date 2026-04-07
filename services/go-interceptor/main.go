@@ -86,16 +86,18 @@ func main() {
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
 
 	// Protect internal tools and audit summaries with Enterprise API Keys if configured.
-	if enterpriseAPIKey != "" {
-		mux.HandleFunc("/analyze", RequireAuth(enterpriseAPIKey, h.analyzeHandler))
-		mux.HandleFunc("/api/v1/audit/summary", RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler))
-	} else {
-		mux.HandleFunc("/analyze", h.analyzeHandler)
-		mux.HandleFunc("/api/v1/audit/summary", h.getAuditSummaryHandler)
-	}
+        if enterpriseAPIKey != "" {
+                mux.HandleFunc("/analyze", RequireAuth(enterpriseAPIKey, h.analyzeHandler))
+                mux.HandleFunc("/api/v1/audit/summary", RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler))
+                mux.HandleFunc("/api/v1/audit/logs", RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler))
+        } else {
+                mux.HandleFunc("/analyze", h.analyzeHandler)
+                mux.HandleFunc("/api/v1/audit/summary", h.getAuditSummaryHandler)
+                mux.HandleFunc("/api/v1/audit/logs", h.getAuditLogsHandler)
+        }
 
-	addr := ":" + port
-	srv := &http.Server{
+        addr := ":" + port
+        srv := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
