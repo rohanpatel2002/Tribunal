@@ -37,6 +37,9 @@ type Repository interface {
 	// GetRepositoryAuditSummary aggregates high-level historical analytics for enterprise reporting.
 	GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error)
 
-	// GetSubscriptionTier queries the organization linked to the repository. Returns 'FREE' by default if no mapping exists.
-	GetSubscriptionTier(ctx context.Context, repoFullName string) (string, error)
+        // GetSubscriptionTier queries the organization linked to the repository. Returns 'FREE' by default if no mapping exists.
+        GetSubscriptionTier(ctx context.Context, repoFullName string) (string, error)
+
+        // GetRecentAnalyses retrieves a paginated list of recent PR analyses for audit logging purposes.
+        GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error)
 }

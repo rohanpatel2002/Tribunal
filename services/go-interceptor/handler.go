@@ -113,25 +113,63 @@ func (h *Handler) getAuditSummaryHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	repoName := r.URL.Query().Get("repo")
-	if repoName == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing 'repo' query parameter"})
+	repository := r.URL.Query().Get("repository")
+	if repository == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing repository query parameter"})
 		return
 	}
 
 	if h.repo == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database persistence is not configured"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
 		return
 	}
 
-	summary, err := h.repo.GetRepositoryAuditSummary(r.Context(), repoName)
+	summary, err := h.repo.GetRepositoryAuditSummary(r.Context(), repository)
 	if err != nil {
-		slog.Error("database error fetching audit summary", "repo", repoName, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		slog.Error("failed to get audit summary", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (h *Handler) getAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	repository := r.URL.Query().Get("repository")
+	if repository == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing repository query parameter"})
+		return
+	}
+
+	limit := 50
+	limitStr := r.URL.Query().Get("limit")
+	if limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 500 {
+			limit = parsed
+		}
+	}
+
+	if h.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	records, err := h.repo.GetRecentAnalyses(r.Context(), limit, repository)
+	if err != nil {
+		slog.Error("failed to fetch recent analyses audit logs", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+
+	if records == nil {
+		records = []PRAnalysisRecord{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": records})
 }
 
 func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
