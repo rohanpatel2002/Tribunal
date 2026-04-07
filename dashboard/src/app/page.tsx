@@ -13,8 +13,21 @@ interface AuditSummary {
   averageAIScore: number;
 }
 
+interface PRAnalysisRecord {
+  repository: string;
+  prNumber: number;
+  commitSHA: string;
+  filesAnalyzed: number;
+  aiGenerated: boolean;
+  overallRiskScore: number;
+  highRiskFound: boolean;
+  criticalRiskFound: boolean;
+  createdAt: string;
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<AuditSummary | null>(null);
+  const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [repo, setRepo] = useState("rohanpatel2002/tribunal");
   const [apiKey, setApiKey] = useState("");
@@ -54,6 +67,26 @@ export default function Dashboard() {
         highRisks: 0,
         averageAIScore: 0.0
       });
+    }
+
+    try {
+      const logsRes = await fetch(`http://localhost:8080/api/v1/audit/recent?repository=${encodeURIComponent(repo)}&limit=10`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (logsRes.ok) {
+        const logsJson = await logsRes.json();
+        if (logsJson) {
+           setLogs(logsJson);
+        } else {
+           setLogs([]);
+        }
+      }
+    } catch (e) {
+      console.warn("Using offline mode, could not fetch logs", e);
+      setLogs([]);
     } finally {
       setLoading(false);
     }
@@ -137,21 +170,22 @@ export default function Dashboard() {
               <h3 className="text-lg font-medium text-white mb-6">Recent Heuristic Flag Log</h3>
               
               <div className="space-y-4">
-                {[
-                  { file: 'schema/postgres.sql', risk: 'CRITICAL', score: 0.98, cause: 'Drop Table Down-time Risk' },
-                  { file: 'services/api/payment.go', risk: 'HIGH', score: 0.89, cause: 'Non-Idempotent Retry' },
-                  { file: 'config/rollout.yaml', risk: 'MEDIUM', score: 0.72, cause: 'Global Feature Flag Cascade' },
-                ].map((log, i) => (
+                {logs.length === 0 && (
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    No recent analysis logs found.
+                  </div>
+                )}
+                {logs.map((log, i) => (
                   <div key={i} className="flex items-center justify-between p-4 bg-black/50 border border-gray-800/60 rounded-lg">
                     <div className="flex items-center gap-4">
-                      <span className={`px-2 py-1 text-[10px] font-bold rounded ${log.risk === 'CRITICAL' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : log.risk === 'HIGH' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
-                        {log.risk}
+                      <span className={`px-2 py-1 text-[10px] font-bold rounded ${log.criticalRiskFound ? 'bg-red-500/10 text-red-500 border border-red-500/20' : log.highRiskFound ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
+                        {log.criticalRiskFound ? 'CRITICAL' : log.highRiskFound ? 'HIGH' : 'MEDIUM'}
                       </span>
-                      <code className="text-sm text-gray-300">{log.file}</code>
+                      <code className="text-sm text-gray-300">{log.repository}/PR-{log.prNumber}</code>
                     </div>
                     <div className="flex items-center gap-6">
-                      <span className="text-sm text-gray-500">{log.cause}</span>
-                      <span className="text-sm text-gray-400 font-mono">Score: {log.score}</span>
+                      <span className="text-sm text-gray-500">{new Date(log.createdAt).toLocaleDateString()}</span>
+                      <span className="text-sm text-gray-400 font-mono">Score: {log.overallRiskScore}</span>
                     </div>
                   </div>
                 ))}
