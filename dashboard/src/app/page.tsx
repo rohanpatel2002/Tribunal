@@ -282,33 +282,81 @@ export default function Dashboard() {
 
                 {/* 2. RECENT ANALYSIS LOGS (Data Grid) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-6">
-                    <h3 className="text-lg font-medium text-white mb-6">Recent Heuristic Flag Log</h3>
+                  <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-125 h-125 bg-indigo-500/5 rounded-full blur-[100px] pointer-events-none -z-10 group-hover:bg-indigo-500/10 transition-all duration-700" />
                     
-                    <div className="space-y-4">
-                      {logs.length === 0 && (
-                        <div className="text-center py-4 text-gray-500 text-sm">
-                          No recent analysis logs found.
-                        </div>
-                      )}
-                      {logs.map((log, i) => (
-                        <div key={i} className="flex items-center justify-between p-4 bg-black/50 border border-gray-800/60 rounded-lg">
-                          <div className="flex items-center gap-4">
-                            <span className={`px-2 py-1 text-[10px] font-bold rounded ${log.criticalRiskFound ? 'bg-red-500/10 text-red-500 border border-red-500/20' : log.highRiskFound ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
-                              {log.criticalRiskFound ? 'CRITICAL' : log.highRiskFound ? 'HIGH' : 'MEDIUM'}
-                            </span>
-                            <code className="text-sm text-gray-300">{log.repository}/PR-{log.prNumber}</code>
-                          </div>
-                          <div className="flex items-center gap-6">
-                            <span className="text-sm text-gray-500">{new Date(log.createdAt).toLocaleDateString()}</span>
-                            <span className="text-sm text-gray-400 font-mono">Score: {log.overallRiskScore}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">Analysis History</h3>
+                        <p className="text-xs text-slate-400 mt-1">Real-time log of security intercepts across branches.</p>
+                      </div>
+                      <button className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors flex items-center gap-1.5 bg-indigo-500/10 px-3 py-1.5 rounded-md hover:bg-indigo-500/20">
+                        View All Reports
+                      </button>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-slate-500 font-medium text-xs uppercase tracking-wider">
+                            <th className="pb-3 px-4 font-semibold">Status</th>
+                            <th className="pb-3 px-4 font-semibold">Event Target</th>
+                            <th className="pb-3 px-4 font-semibold">AI Config</th>
+                            <th className="pb-3 px-4 font-semibold text-right">Risk Score</th>
+                            <th className="pb-3 px-4 font-semibold text-right">Log Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/50">
+                          {logs.length === 0 && (
+                            <tr>
+                               <td colSpan={5} className="py-8 text-center text-slate-500 text-xs italic">
+                                 No recent analysis logs found. Waiting for incoming webhooks.
+                               </td>
+                            </tr>
+                          )}
+                          {logs.map((log, i) => (
+                            <tr key={i} className="group/row hover:bg-slate-800/30 transition-colors">
+                              <td className="py-4 px-4 align-middle">
+                                 <span className={`inline-flex items-center justify-center px-2 py-1 w-20 text-[10px] font-bold rounded-md ring-1 ring-inset shadow-sm ${log.criticalRiskFound ? 'bg-red-500/10 text-red-500 ring-red-500/30 shadow-red-500/20' : log.highRiskFound ? 'bg-orange-500/10 text-orange-400 ring-orange-500/30 shadow-orange-500/20' : 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/30 shadow-emerald-500/20'}`}>
+                                    {log.criticalRiskFound ? 'CRITICAL' : log.highRiskFound ? 'HIGH' : 'PASS'}
+                                 </span>
+                              </td>
+                              <td className="py-4 px-4 align-middle">
+                                 <div className="flex flex-col">
+                                   <code className="text-xs text-indigo-300 font-mono tracking-tight">{log.repository}/PR-{log.prNumber}</code>
+                                   <span className="text-[10px] text-slate-500 mt-0.5">Commit: {log.commitSHA ? log.commitSHA.substring(0, 7) : 'head'}</span>
+                                 </div>
+                              </td>
+                              <td className="py-4 px-4 align-middle">
+                                  <div className="flex items-center gap-2">
+                                    {log.aiGenerated ? (
+                                       <span className="flex items-center gap-1.5 text-xs text-purple-400">
+                                         <Activity size={12} />
+                                         AI Generated
+                                       </span>
+                                    ) : (
+                                       <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                                         User Authored
+                                       </span>
+                                    )}
+                                  </div>
+                              </td>
+                              <td className="py-4 px-4 align-middle text-right">
+                                 <span className="text-xs font-mono font-medium text-slate-300 bg-slate-900 border border-slate-700/50 px-2 py-1 rounded">
+                                   {log.overallRiskScore?.toFixed(2)}
+                                 </span>
+                              </td>
+                              <td className="py-4 px-4 align-middle text-right whitespace-nowrap">
+                                 <span className="text-xs text-slate-500">{new Date(log.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 
-                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col relative overflow-hidden">
+                  <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-6 relative overflow-hidden group">
                     <h3 className="text-lg font-medium text-white mb-6 z-10">System Health Trend</h3>
                     <div className="flex-1 flex flex-col items-center justify-center z-10">
                       <div className="w-32 h-32 rounded-full border-8 border-indigo-500 flex items-center justify-center mb-4 relative drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
