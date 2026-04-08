@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { Search, Bell, Menu, ShieldAlert, BarChart3, Database, Settings, GitPullRequest, Activity, ChevronRight, Fingerprint, RefreshCcw } from 'lucide-react';
 
 // Interfaces for our Go backend
 interface AuditSummary {
@@ -31,9 +32,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [repo, setRepo] = useState("rohanpatel2002/tribunal");
   const [apiKey, setApiKey] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
+    setIsRefreshing(true);
     try {
       const res = await fetch(`http://localhost:8080/api/v1/audit/summary?repository=${encodeURIComponent(repo)}`, {
         headers: {
@@ -89,6 +92,7 @@ export default function Dashboard() {
       setLogs([]);
     } finally {
       setLoading(false);
+      setTimeout(() => setIsRefreshing(false), 500); // Visual feedback
     }
   };
 
@@ -97,122 +101,210 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white font-sans p-8">
-      {/* Header */}
-      <header className="mb-10 flex items-center justify-between border-b border-gray-800 pb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-1">TRIBUNAL <span className="text-gray-500 font-light ml-2">Enterprise</span></h1>
-          <p className="text-gray-400 text-sm">CTO Audit Dashboard</p>
-        </div>
-        <div className="flex gap-4">
-          <input 
-            type="password" 
-            placeholder="TRIBUNAL_API_KEY" 
-            className="bg-gray-900 border border-gray-800 rounded px-4 py-2 text-sm text-gray-300 focus:outline-none focus:border-indigo-500"
-            onChange={(e) => setApiKey(e.target.value)}
-            value={apiKey}
-          />
-          <button 
-            onClick={fetchData}
-            className="bg-white text-black font-medium px-4 py-2 rounded text-sm hover:bg-gray-200 transition-colors"
-          >
-            Refresh Data
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      {loading ? (
-        <div className="h-64 flex items-center justify-center">
-          <div className="animate-pulse flex flex-col items-center">
-            <div className="h-8 w-8 bg-indigo-500 rounded-full mb-4"></div>
-            <p className="text-gray-500">Querying Postgres...</p>
-          </div>
-        </div>
-      ) : (
-        <div className="max-w-6xl mx-auto space-y-8">
-          
-          <div className="flex items-center gap-3 mb-6">
-            <span className="h-3 w-3 rounded-full bg-green-500 animate-pulse"></span>
-            <h2 className="text-xl font-medium tracking-tight">Active Context: <span className="text-indigo-400 font-mono ml-2">{data?.repository}</span></h2>
+    <div className="flex w-full h-full text-slate-200 font-sans overflow-hidden">
+      {/* ENTERPRISE SIDEBAR */}
+      <aside className="w-64 bg-[#09090b]/80 border-r border-slate-800/80 backdrop-blur-xl flex flex-col justify-between transition-all pt-6 pb-4 z-20 hidden md:flex">
+        <div className="px-6 flex flex-col gap-8">
+          <div className="flex items-center gap-3">
+             <div className="bg-indigo-600 p-2 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20">
+               <Fingerprint size={24} className="text-white" />
+             </div>
+             <div>
+               <h1 className="text-xl font-bold tracking-tight text-white leading-tight mt-1">Tribunal <span className="font-light text-indigo-400">AI</span></h1>
+               <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">Platform Defense</p>
+             </div>
           </div>
 
-          {/* Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-              <p className="text-sm text-gray-400 mb-1">Total PRs Analyzed</p>
-              <p className="text-3xl font-semibold text-white">{data?.totalPRs}</p>
-            </div>
-            
-            <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-              <p className="text-sm text-gray-400 mb-1">AI-Authored Files</p>
-              <p className="text-3xl font-semibold text-purple-400">{data?.aiGeneratedPRs} <span className="text-xs text-gray-500 ml-1 font-normal">/ {data?.totalFiles} files</span></p>
-            </div>
-
-            <div className="bg-[#1a0f0f] border border-red-900/30 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-red-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-              <p className="text-sm text-red-400/80 mb-1">Critical God-Mode Flags</p>
-              <p className="text-3xl font-semibold text-red-500">{data?.criticalRisks}</p>
-            </div>
-
-            <div className="bg-[#1c130d] border border-orange-900/30 p-6 rounded-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-              <p className="text-sm text-orange-400/80 mb-1">High Risk Flags</p>
-              <p className="text-3xl font-semibold text-orange-500">{data?.highRisks}</p>
-            </div>
-          </div>
-
-          {/* Detailed Context Zone */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h3 className="text-lg font-medium text-white mb-6">Recent Heuristic Flag Log</h3>
-              
-              <div className="space-y-4">
-                {logs.length === 0 && (
-                  <div className="text-center py-4 text-gray-500 text-sm">
-                    No recent analysis logs found.
-                  </div>
-                )}
-                {logs.map((log, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 bg-black/50 border border-gray-800/60 rounded-lg">
-                    <div className="flex items-center gap-4">
-                      <span className={`px-2 py-1 text-[10px] font-bold rounded ${log.criticalRiskFound ? 'bg-red-500/10 text-red-500 border border-red-500/20' : log.highRiskFound ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
-                        {log.criticalRiskFound ? 'CRITICAL' : log.highRiskFound ? 'HIGH' : 'MEDIUM'}
-                      </span>
-                      <code className="text-sm text-gray-300">{log.repository}/PR-{log.prNumber}</code>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <span className="text-sm text-gray-500">{new Date(log.createdAt).toLocaleDateString()}</span>
-                      <span className="text-sm text-gray-400 font-mono">Score: {log.overallRiskScore}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col relative overflow-hidden">
-              <h3 className="text-lg font-medium text-white mb-6 z-10">System Health Trend</h3>
-              <div className="flex-1 flex flex-col items-center justify-center z-10">
-                <div className="w-32 h-32 rounded-full border-[8px] border-indigo-500 flex items-center justify-center mb-4 relative drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
-                  <span className="text-2xl font-bold">{(data?.averageAIScore || 0) * 100}%</span>
+          <nav className="flex flex-col gap-2 mt-4">
+             <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2 px-2">Analytics</p>
+             <button className="flex items-center justify-between px-3 py-2.5 bg-indigo-500/10 text-indigo-400 rounded-lg group">
+                <div className="flex items-center gap-3 font-medium text-sm">
+                   <Activity size={18} />
+                   <span>Risk Command</span>
                 </div>
-                <p className="text-center text-sm text-gray-400 mt-2">
-                  Average AI Generation Probability across <strong className="text-gray-200">24h</strong> trailing window.
-                </p>
+                <div className="w-1 h-4 bg-indigo-500 rounded-full scale-0 group-hover:scale-100 transition-transform origin-right" />
+             </button>
+             <button className="flex items-center justify-between px-3 py-2.5 text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 rounded-lg group transition-colors">
+                <div className="flex items-center gap-3 font-medium text-sm">
+                   <ShieldAlert size={18} />
+                   <span>Vulnerabilities</span>
+                </div>
+             </button>
+             <button className="flex items-center justify-between px-3 py-2.5 text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 rounded-lg group transition-colors">
+                <div className="flex items-center gap-3 font-medium text-sm">
+                   <GitPullRequest size={18} />
+                   <span>Repositories</span>
+                </div>
+             </button>
+          </nav>
+        </div>
+
+        <div className="px-6 mt-auto">
+          <nav className="flex flex-col gap-2">
+             <button className="flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 rounded-lg transition-colors font-medium text-sm">
+                <Settings size={18} />
+                <span>Enterprise Config</span>
+             </button>
+          </nav>
+          
+          <div className="mt-6 pt-6 border-t border-slate-800/50 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-slate-800/80 border border-slate-700/50 flex items-center justify-center">
+                 <div className="w-5 h-5 rounded-full bg-linear-to-tr from-cyan-400 to-indigo-500" />
               </div>
-              
-              {/* Decorative mini bar chart in background */}
-              <div className="absolute bottom-0 left-0 w-full h-24 flex items-end gap-1 px-4 opacity-20 pointer-events-none">
-                {[40, 70, 45, 90, 65, 80, 50, 85, 60, 95, 75, 65, 88].map((h, i) => (
-                  <div key={i} className="bg-indigo-500 w-full rounded-t-sm" style={{ height: `${h}%` }}></div>
-                ))}
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-white">Chief Security</span>
+                <span className="text-[10px] text-slate-500">Tier: Elite</span>
               </div>
             </div>
+            <button className="text-slate-500 hover:text-white transition-colors">
+               <ChevronRight size={16} />
+            </button>
           </div>
         </div>
-      )}
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 flex flex-col h-full bg-transparent overflow-y-auto relative">
+         {/* HEADER */}
+         <header className="h-16 border-b border-white/5 bg-[#020617]/50 backdrop-blur-xl sticky top-0 z-10 flex items-center justify-between px-8">
+            <div className="flex items-center gap-4 text-sm">
+               <span className="text-slate-400">Workspaces</span>
+               <ChevronRight size={14} className="text-slate-600" />
+               <span className="font-medium text-indigo-300 flex items-center gap-2">
+                  <Database size={14} />
+                  {repo}
+               </span>
+            </div>
+            <div className="flex items-center gap-5">
+               <div className="relative group hidden sm:block">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                  <input 
+                    type="text" 
+                    placeholder="Search logs or policies..." 
+                    className="pl-9 pr-4 py-1.5 bg-slate-900/50 border border-slate-800 rounded-full text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all w-64"
+                  />
+               </div>
+               <button className="relative text-slate-400 hover:text-white transition-colors">
+                  <Bell size={18} />
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full text-[8px] flex items-center justify-center translate-x-1/3 -translate-y-1/4 ring-2 ring-[#020617]" />
+               </button>
+            </div>
+         </header>
+
+         {/* DASHBOARD CONTENT */}
+         <div className="p-8 max-w-7xl w-full mx-auto pb-24">
+            {/* HERO SECTION */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+              <div>
+                <h2 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+                  AI Code Posture
+                  <span className="px-2.5 py-0.5 text-[10px] uppercase font-bold tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live</span>
+                </h2>
+                <p className="text-sm text-slate-400 mt-2 max-w-xl">Continuous integration insights. Analyzing pull requests for adversarial prompts, sensitive exfiltration, and logic bombs across <span className="text-white font-medium">{repo}</span>.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                 <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 border border-slate-700/50 hover:bg-slate-800/50 backdrop-blur-sm rounded-lg text-sm text-slate-300 font-medium transition-all mr-2">
+                   <RefreshCcw size={14} className={isRefreshing ? "animate-spin text-indigo-400" : ""} />
+                   Sync Data
+                 </button>
+                 <div className="flex items-center gap-2 bg-[#09090b]/80 p-1 border border-slate-800 rounded-lg">
+                    <input 
+                      type="password" 
+                      placeholder="Enterprise API Key..." 
+                      className="bg-transparent border-none text-xs text-white px-3 focus:outline-none w-48 font-mono placeholder-slate-600"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                    />
+                 </div>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-20 text-gray-500">
+                 {/* Better skeleton loader here later */}
+                 Loading telemetry...
+              </div>
+            ) : (
+              <div className="flex flex-col gap-8">
+                {/* 1. METRICS GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
+                    <p className="text-sm text-gray-400 mb-1">Total PRs Analyzed</p>
+                    <p className="text-3xl font-semibold text-white">{data?.totalPRs}</p>
+                  </div>
+                  
+                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
+                    <p className="text-sm text-gray-400 mb-1">AI-Authored Files</p>
+                    <p className="text-3xl font-semibold text-purple-400">{data?.aiGeneratedPRs} <span className="text-xs text-gray-500 ml-1 font-normal">/ {data?.totalFiles} files</span></p>
+                  </div>
+
+                  <div className="bg-[#1a0f0f] border border-red-900/30 p-6 rounded-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-red-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
+                    <p className="text-sm text-red-400/80 mb-1">Critical God-Mode Flags</p>
+                    <p className="text-3xl font-semibold text-red-500">{data?.criticalRisks}</p>
+                  </div>
+
+                  <div className="bg-[#1c130d] border border-orange-900/30 p-6 rounded-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
+                    <p className="text-sm text-orange-400/80 mb-1">High Risk Flags</p>
+                    <p className="text-3xl font-semibold text-orange-500">{data?.highRisks}</p>
+                  </div>
+                </div>
+
+                {/* 2. DETAILED CONTEXT ZONE */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-6">
+                    <h3 className="text-lg font-medium text-white mb-6">Recent Heuristic Flag Log</h3>
+                    
+                    <div className="space-y-4">
+                      {logs.length === 0 && (
+                        <div className="text-center py-4 text-gray-500 text-sm">
+                          No recent analysis logs found.
+                        </div>
+                      )}
+                      {logs.map((log, i) => (
+                        <div key={i} className="flex items-center justify-between p-4 bg-black/50 border border-gray-800/60 rounded-lg">
+                          <div className="flex items-center gap-4">
+                            <span className={`px-2 py-1 text-[10px] font-bold rounded ${log.criticalRiskFound ? 'bg-red-500/10 text-red-500 border border-red-500/20' : log.highRiskFound ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
+                              {log.criticalRiskFound ? 'CRITICAL' : log.highRiskFound ? 'HIGH' : 'MEDIUM'}
+                            </span>
+                            <code className="text-sm text-gray-300">{log.repository}/PR-{log.prNumber}</code>
+                          </div>
+                          <div className="flex items-center gap-6">
+                            <span className="text-sm text-gray-500">{new Date(log.createdAt).toLocaleDateString()}</span>
+                            <span className="text-sm text-gray-400 font-mono">Score: {log.overallRiskScore}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col relative overflow-hidden">
+                    <h3 className="text-lg font-medium text-white mb-6 z-10">System Health Trend</h3>
+                    <div className="flex-1 flex flex-col items-center justify-center z-10">
+                      <div className="w-32 h-32 rounded-full border-8 border-indigo-500 flex items-center justify-center mb-4 relative drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                        <span className="text-2xl font-bold">{(data?.averageAIScore || 0) * 100}%</span>
+                      </div>
+                      <p className="text-center text-sm text-gray-400 mt-2">
+                        Average AI Generation Probability across <strong className="text-gray-200">24h</strong> trailing window.
+                      </p>
+                    </div>
+                    
+                    {/* Decorative mini bar chart in background */}
+                    <div className="absolute bottom-0 left-0 w-full h-24 flex items-end gap-1 px-4 opacity-20 pointer-events-none">
+                      {[40, 70, 45, 90, 65, 80, 50, 85, 60, 95, 75, 65, 88].map((h, i) => (
+                        <div key={i} className="bg-indigo-500 w-full rounded-t-sm" style={{ height: `${h}%` }}></div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+      </main>
     </div>
   );
 }
