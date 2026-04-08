@@ -221,9 +221,16 @@ export default function Dashboard() {
             </div>
 
             {loading ? (
-              <div className="flex items-center justify-center py-20 text-gray-500">
-                 {/* Better skeleton loader here later */}
-                 Loading telemetry...
+              <div className="flex flex-col gap-8 w-full animate-pulse mt-8">
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[1, 2, 3, 4].map((i) => (
+                       <div key={i} className="bg-slate-900/40 border border-slate-800/60 p-6 rounded-2xl h-32" />
+                    ))}
+                 </div>
+                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 bg-slate-900/40 border border-slate-800/60 h-96 rounded-2xl" />
+                    <div className="bg-slate-900/40 border border-slate-800/60 h-96 rounded-2xl" />
+                 </div>
               </div>
             ) : (
               <div className="flex flex-col gap-8">
@@ -250,7 +257,7 @@ export default function Dashboard() {
                         <h3 className="text-sm font-medium text-slate-400">AI-Generated Code</h3>
                      </div>
                      <p className="text-3xl font-extrabold text-white mt-4">{data?.aiGeneratedPRs}</p>
-                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">Average Score: <span className="text-purple-400 font-mono">{(data.averageAIScore * 100).toFixed(1)}%</span></p>
+                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">Average Score: <span className="text-purple-400 font-mono">{((data?.averageAIScore || 0) * 100).toFixed(1)}%</span></p>
                   </div>
 
                   <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700/80 transition-all">
@@ -263,7 +270,7 @@ export default function Dashboard() {
                      </div>
                      <p className="text-3xl font-extrabold text-white mt-4">{data?.criticalRisks}</p>
                      <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
-                        {data?.criticalRisks > 0 ? <span className="text-red-500 font-medium">Requires immediate action</span> : <span className="text-emerald-500 font-medium">Clear</span>}
+                        {(data?.criticalRisks || 0) > 0 ? <span className="text-red-500 font-medium">Requires immediate action</span> : <span className="text-emerald-500 font-medium">Clear</span>}
                      </p>
                   </div>
 
@@ -283,76 +290,33 @@ export default function Dashboard() {
                 {/* 2. RECENT ANALYSIS LOGS (Data Grid) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-6 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-125 h-125 bg-indigo-500/5 rounded-full blur-[100px] pointer-events-none -z-10 group-hover:bg-indigo-500/10 transition-all duration-700" />
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none -z-10 transition-all duration-700" />
+                    <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">Repository Context</h3>
                     
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-lg font-bold text-white flex items-center gap-2">Analysis History</h3>
-                        <p className="text-xs text-slate-400 mt-1">Real-time log of security intercepts across branches.</p>
+                    <div className="flex flex-col items-center justify-center py-6 mb-4 relative">
+                      <div className="w-32 h-32 rounded-full border-8 border-indigo-500 flex items-center justify-center mb-4 relative drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                        <div className="absolute inset-0 rounded-full border border-indigo-400/30 animate-ping" />
+                        <span className="text-4xl font-extrabold text-white bg-clip-text text-transparent bg-linear-to-b from-white to-slate-400">
+                           {data?.averageAIScore ? (data.averageAIScore * 100).toFixed(0) : '0'}
+                        </span>
                       </div>
-                      <button className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors flex items-center gap-1.5 bg-indigo-500/10 px-3 py-1.5 rounded-md hover:bg-indigo-500/20">
-                        View All Reports
-                      </button>
+                      <span className="text-sm font-medium text-indigo-300">Composite Risk Score</span>
+                      <p className="text-xs text-slate-500 text-center mt-2 px-4 leading-relaxed">Aggregated confidence score reflecting organizational security compliance.</p>
                     </div>
-                    
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm border-collapse">
-                        <thead>
-                          <tr className="border-b border-slate-800 text-slate-500 font-medium text-xs uppercase tracking-wider">
-                            <th className="pb-3 px-4 font-semibold">Status</th>
-                            <th className="pb-3 px-4 font-semibold">Event Target</th>
-                            <th className="pb-3 px-4 font-semibold">AI Config</th>
-                            <th className="pb-3 px-4 font-semibold text-right">Risk Score</th>
-                            <th className="pb-3 px-4 font-semibold text-right">Log Time</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/50">
-                          {logs.length === 0 && (
-                            <tr>
-                               <td colSpan={5} className="py-8 text-center text-slate-500 text-xs italic">
-                                 No recent analysis logs found. Waiting for incoming webhooks.
-                               </td>
-                            </tr>
-                          )}
-                          {logs.map((log, i) => (
-                            <tr key={i} className="group/row hover:bg-slate-800/30 transition-colors">
-                              <td className="py-4 px-4 align-middle">
-                                 <span className={`inline-flex items-center justify-center px-2 py-1 w-20 text-[10px] font-bold rounded-md ring-1 ring-inset shadow-sm ${log.criticalRiskFound ? 'bg-red-500/10 text-red-500 ring-red-500/30 shadow-red-500/20' : log.highRiskFound ? 'bg-orange-500/10 text-orange-400 ring-orange-500/30 shadow-orange-500/20' : 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/30 shadow-emerald-500/20'}`}>
-                                    {log.criticalRiskFound ? 'CRITICAL' : log.highRiskFound ? 'HIGH' : 'PASS'}
-                                 </span>
-                              </td>
-                              <td className="py-4 px-4 align-middle">
-                                 <div className="flex flex-col">
-                                   <code className="text-xs text-indigo-300 font-mono tracking-tight">{log.repository}/PR-{log.prNumber}</code>
-                                   <span className="text-[10px] text-slate-500 mt-0.5">Commit: {log.commitSHA ? log.commitSHA.substring(0, 7) : 'head'}</span>
-                                 </div>
-                              </td>
-                              <td className="py-4 px-4 align-middle">
-                                  <div className="flex items-center gap-2">
-                                    {log.aiGenerated ? (
-                                       <span className="flex items-center gap-1.5 text-xs text-purple-400">
-                                         <Activity size={12} />
-                                         AI Generated
-                                       </span>
-                                    ) : (
-                                       <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                                         User Authored
-                                       </span>
-                                    )}
-                                  </div>
-                              </td>
-                              <td className="py-4 px-4 align-middle text-right">
-                                 <span className="text-xs font-mono font-medium text-slate-300 bg-slate-900 border border-slate-700/50 px-2 py-1 rounded">
-                                   {log.overallRiskScore?.toFixed(2)}
-                                 </span>
-                              </td>
-                              <td className="py-4 px-4 align-middle text-right whitespace-nowrap">
-                                 <span className="text-xs text-slate-500">{new Date(log.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center py-3 border-b border-slate-800/60">
+                        <span className="text-sm text-slate-400 font-medium">Target Repo</span>
+                        <span className="text-sm text-white font-mono bg-slate-800/50 px-2 py-0.5 rounded border border-slate-700/50">{data?.repository || 'n/a'}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-3 border-b border-slate-800/60">
+                        <span className="text-sm text-slate-400 font-medium">Files Analyzed</span>
+                        <span className="text-sm text-white font-mono">{data?.totalFiles || 0}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-3">
+                        <span className="text-sm text-slate-400 font-medium">Active Policy</span>
+                        <span className="text-[10px] uppercase tracking-widest font-bold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20">Strict</span>
+                      </div>
                     </div>
                   </div>
 
