@@ -229,32 +229,58 @@ export default function Dashboard() {
               <div className="flex flex-col gap-8">
                 {/* 1. METRICS GRID */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-                    <p className="text-sm text-gray-400 mb-1">Total PRs Analyzed</p>
-                    <p className="text-3xl font-semibold text-white">{data?.totalPRs}</p>
-                  </div>
-                  
-                  <div className="bg-gray-900 border border-gray-800 p-6 rounded-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-purple-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-                    <p className="text-sm text-gray-400 mb-1">AI-Authored Files</p>
-                    <p className="text-3xl font-semibold text-purple-400">{data?.aiGeneratedPRs} <span className="text-xs text-gray-500 ml-1 font-normal">/ {data?.totalFiles} files</span></p>
-                  </div>
-
-                  <div className="bg-[#1a0f0f] border border-red-900/30 p-6 rounded-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-red-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-                    <p className="text-sm text-red-400/80 mb-1">Critical God-Mode Flags</p>
-                    <p className="text-3xl font-semibold text-red-500">{data?.criticalRisks}</p>
+                  <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700/80 transition-all">
+                     <div className="absolute -right-4 -top-4 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all" />
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg">
+                           <GitPullRequest size={18} />
+                        </div>
+                        <h3 className="text-sm font-medium text-slate-400">Total PRs Analyzed</h3>
+                     </div>
+                     <p className="text-3xl font-extrabold text-white mt-4">{data?.totalPRs}</p>
+                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1"><span className="text-blue-400 font-medium">+{data?.totalFiles}</span> files</p>
                   </div>
 
-                  <div className="bg-[#1c130d] border border-orange-900/30 p-6 rounded-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500 opacity-10 blur-xl rounded-full translate-x-4 -translate-y-4"></div>
-                    <p className="text-sm text-orange-400/80 mb-1">High Risk Flags</p>
-                    <p className="text-3xl font-semibold text-orange-500">{data?.highRisks}</p>
+                  <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700/80 transition-all">
+                     <div className="absolute -right-4 -top-4 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all" />
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-purple-500/10 text-purple-400 rounded-lg">
+                           <Activity size={18} />
+                        </div>
+                        <h3 className="text-sm font-medium text-slate-400">AI-Generated Code</h3>
+                     </div>
+                     <p className="text-3xl font-extrabold text-white mt-4">{data?.aiGeneratedPRs}</p>
+                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">Average Score: <span className="text-purple-400 font-mono">{(data.averageAIScore * 100).toFixed(1)}%</span></p>
+                  </div>
+
+                  <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700/80 transition-all">
+                     <div className="absolute -right-4 -top-4 w-24 h-24 bg-red-500/10 rounded-full blur-2xl group-hover:bg-red-500/20 transition-all" />
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">
+                           <ShieldAlert size={18} />
+                        </div>
+                        <h3 className="text-sm font-medium text-slate-400">Critical Risks</h3>
+                     </div>
+                     <p className="text-3xl font-extrabold text-white mt-4">{data?.criticalRisks}</p>
+                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                        {data?.criticalRisks > 0 ? <span className="text-red-500 font-medium">Requires immediate action</span> : <span className="text-emerald-500 font-medium">Clear</span>}
+                     </p>
+                  </div>
+
+                  <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 p-6 rounded-2xl relative overflow-hidden group hover:border-slate-700/80 transition-all">
+                     <div className="absolute -right-4 -top-4 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl group-hover:bg-orange-500/20 transition-all" />
+                     <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-orange-500/10 text-orange-400 rounded-lg">
+                           <ShieldAlert size={18} />
+                        </div>
+                        <h3 className="text-sm font-medium text-slate-400">High Risks</h3>
+                     </div>
+                     <p className="text-3xl font-extrabold text-white mt-4">{data?.highRisks}</p>
+                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">Policy violations</p>
                   </div>
                 </div>
 
-                {/* 2. DETAILED CONTEXT ZONE */}
+                {/* 2. RECENT ANALYSIS LOGS (Data Grid) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-6">
                     <h3 className="text-lg font-medium text-white mb-6">Recent Heuristic Flag Log</h3>
