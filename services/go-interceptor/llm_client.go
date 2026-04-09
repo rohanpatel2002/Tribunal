@@ -1,13 +1,14 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"time"
+"bytes"
+"context"
+"encoding/json"
+"fmt"
+"io"
+"net/http"
+"strings"
+"time"
 )
 
 // LLMIntegrator defines the interface for interacting with Large Language Models.
@@ -26,28 +27,28 @@ type LLMAnalysisResult struct {
 	SuggestedFix  string  `json:"suggestedFix"`  // A raw code block providing the remediated code
 }
 
-// DefaultClaudeClient implements LLMIntegrator using the Anthropic Messages API.
-type DefaultClaudeClient struct {
+// OpenRouterClient implements LLMIntegrator using the OpenRouter API (OpenAI format).
+type OpenRouterClient struct {
 	httpClient *http.Client
 	apiKey     string
 	baseURL    string
 	model      string
 }
 
-// NewClaudeClient creates an LLM integrator for Anthropic.
-func NewClaudeClient(apiKey string) *DefaultClaudeClient {
-	return &DefaultClaudeClient{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		baseURL:    "https://api.anthropic.com/v1/messages",
+// NewOpenRouterClient creates an LLM integrator for OpenRouter.
+func NewOpenRouterClient(apiKey string) *OpenRouterClient {
+	return &OpenRouterClient{
+		httpClient: &http.Client{Timeout: 60 * time.Second},
+		baseURL:    "https://openrouter.ai/api/v1/chat/completions",
+		model:      "meta-llama/llama-3.3-70b-instruct:free", // One of the best free models!
 		apiKey:     apiKey,
-		model:      "claude-3-sonnet-20240229", // Standard high-context model
 	}
 }
 
-// AnalyzeCode submits the diff to Claude and parses the JSON response.
-func (c *DefaultClaudeClient) AnalyzeCode(ctx context.Context, filename string, patch string, repoContext string) (*LLMAnalysisResult, error) {
+// AnalyzeCode submits the diff to OpenRouter and parses the JSON response.
+func (c *OpenRouterClient) AnalyzeCode(ctx context.Context, filename string, patch string, repoContext string) (*LLMAnalysisResult, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("anthropic api key not configured")
+		return nil, fmt.Errorf("openrouter api key not configured")
 	}
 
 	contextAddendum := ""
@@ -58,9 +59,7 @@ func (c *DefaultClaudeClient) AnalyzeCode(ctx context.Context, filename string, 
 
 	prompt := fmt.Sprintf(`Analyze the following code patch for file '%s'.
 Tell me two things: is this code likely AI-generated, and does it introduce any hidden business logic or semantic risks?%s
-
 If there is a severe semantic risk or architectural violation, provide the exact valid code block to fix the developer's PR in the 'suggestedFix' field. If no fix is required, leave 'suggestedFix' empty.
-
 Please respond ONLY with valid JSON strictly matching this structure:
 {
   "aiScore": 0.85,
@@ -77,64 +76,71 @@ Code Patch:
 %s`, filename, contextAddendum, patch)
 
 	payload := map[string]interface{}{
-		"model":      c.model,
-		"max_tokens": 1024,
+		"model": c.model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
+		"response_format": map[string]string{"type": "json_object"}, // Force JSON response
 	}
 
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal anthropic payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal openrouter payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create anthropic request: %w", err)
+		return nil, fmt.Errorf("failed to create openrouter request: %w", err)
 	}
 
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("HTTP-Referer", "http://localhost:3000") // Required by OpenRouter
+	req.Header.Set("X-Title", "Tribunal Local Dev")        // Required by OpenRouter
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic api request failed: %w", err)
+		return nil, fmt.Errorf("openrouter api request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("anthropic api returned status %d: %s", resp.StatusCode, string(b))
+		return nil, fmt.Errorf("openrouter api returned status %d: %s", resp.StatusCode, string(b))
 	}
 
-	// Parse the wrapped anthropic response format
-	var anthropicResp struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
+	var openRouterResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
-		return nil, fmt.Errorf("failed to decode anthropic response wrapper: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&openRouterResp); err != nil {
+		return nil, fmt.Errorf("failed to decode openrouter response wrapper: %w", err)
 	}
 
-	if len(anthropicResp.Content) == 0 {
-		return nil, fmt.Errorf("empty text content returned from anthropic")
+	if len(openRouterResp.Choices) == 0 {
+		return nil, fmt.Errorf("empty text content returned from openrouter")
 	}
 
-	rawJSONString := anthropicResp.Content[0].Text
+	rawJSONString := openRouterResp.Choices[0].Message.Content
 
-	var finalResult LLMAnalysisResult
-	if err := json.Unmarshal([]byte(rawJSONString), &finalResult); err != nil {
+	// Clean up markdown if the LLM hallucinated it despite our instructions
+	rawJSONString = strings.TrimPrefix(rawJSONString, "```json")
+rawJSONString = strings.TrimPrefix(rawJSONString, "```")
+	rawJSONString = strings.TrimSuffix(strings.TrimSpace(rawJSONString), "```")
+
+var finalResult LLMAnalysisResult
+if err := json.Unmarshal([]byte(rawJSONString), &finalResult); err != nil {
 		return nil, fmt.Errorf("failed to decode inner JSON structure from LLM text: %w. Raw string: %s", err, rawJSONString)
-	}
+}
 
-	// Normalize Risk Level
-	if finalResult.RiskLevel != "LOW" && finalResult.RiskLevel != "MEDIUM" && finalResult.RiskLevel != "HIGH" && finalResult.RiskLevel != "CRITICAL" {
-		finalResult.RiskLevel = "MEDIUM" // Fallback fallback standard
-	}
+// Normalize Risk Level
+if finalResult.RiskLevel != "LOW" && finalResult.RiskLevel != "MEDIUM" && finalResult.RiskLevel != "HIGH" && finalResult.RiskLevel != "CRITICAL" {
+finalResult.RiskLevel = "MEDIUM" // Fallback fallback standard
+}
 
-	return &finalResult, nil
+return &finalResult, nil
 }

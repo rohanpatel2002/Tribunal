@@ -31,7 +31,7 @@ export default function Dashboard() {
   const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [repo, setRepo] = useState("rohanpatel2002/tribunal");
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState("dev_enterprise_key_123");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchData = async () => {
@@ -73,7 +73,7 @@ export default function Dashboard() {
     }
 
     try {
-      const logsRes = await fetch(`http://localhost:8080/api/v1/audit/recent?repository=${encodeURIComponent(repo)}&limit=10`, {
+      const logsRes = await fetch(`http://localhost:8080/api/v1/audit/logs?repository=${encodeURIComponent(repo)}&limit=10`, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
