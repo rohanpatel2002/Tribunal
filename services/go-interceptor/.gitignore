@@ -1,0 +1,11 @@
+# Environment variables
+.env
+.env.*
+
+# Binaries
+go-interceptor
+go-interceptor-bin
+
+# Go artifacts
+*.exe
+*.test

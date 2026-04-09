@@ -42,14 +42,16 @@ func main() {
 	if dbURL != "" {
 		pgRepo, err := NewPostgresRepository(context.Background(), dbURL)
 		if err != nil {
-			slog.Warn("failed to connect to Postgres (running without persistence)", "error", err)
+			slog.Warn("failed to connect to Postgres. Falling back to in-memory storage.", "error", err)
+			repo = NewInMemoryRepository()
 		} else {
 			slog.Info("connected to Postgres database")
 			repo = pgRepo
 			defer pgRepo.Close()
 		}
 	} else {
-		slog.Info("DATABASE_URL not set, running interceptor without database persistence")
+		slog.Info("DATABASE_URL not set, running interceptor with in-memory persistence (data will reset on restart)")
+		repo = NewInMemoryRepository()
 	}
 
 	githubToken := os.Getenv("GITHUB_TOKEN")
@@ -61,13 +63,13 @@ func main() {
 		slog.Info("GITHUB_TOKEN not set, running without GitHub integrations")
 	}
 
-	anthropicAPIKey := os.Getenv("ANTHROPIC_API_KEY")
+	openrouterAPIKey := os.Getenv("OPENROUTER_API_KEY")
 	var llmClient LLMIntegrator
-	if anthropicAPIKey != "" {
-		llmClient = NewClaudeClient(anthropicAPIKey)
-		slog.Info("Anthropic LLM client initialized")
+	if openrouterAPIKey != "" {
+		llmClient = NewOpenRouterClient(openrouterAPIKey)
+		slog.Info("OpenRouter LLM client initialized")
 	} else {
-		slog.Info("ANTHROPIC_API_KEY not set, using heuristic analysis only")
+		slog.Info("OPENROUTER_API_KEY not set, using heuristic analysis only")
 	}
 
 	h := NewHandler(repo, ghClient, llmClient)
