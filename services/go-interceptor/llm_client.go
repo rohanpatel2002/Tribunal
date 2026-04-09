@@ -1,14 +1,14 @@
 package main
 
 import (
-"bytes"
-"context"
-"encoding/json"
-"fmt"
-"io"
-"net/http"
-"strings"
-"time"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
 )
 
 // LLMIntegrator defines the interface for interacting with Large Language Models.
@@ -95,7 +95,7 @@ Code Patch:
 
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("HTTP-Referer", "http://localhost:3000") // Required by OpenRouter
-	req.Header.Set("X-Title", "Tribunal Local Dev")        // Required by OpenRouter
+	req.Header.Set("X-Title", "Tribunal Local Dev")         // Required by OpenRouter
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -129,18 +129,18 @@ Code Patch:
 
 	// Clean up markdown if the LLM hallucinated it despite our instructions
 	rawJSONString = strings.TrimPrefix(rawJSONString, "```json")
-rawJSONString = strings.TrimPrefix(rawJSONString, "```")
+	rawJSONString = strings.TrimPrefix(rawJSONString, "```")
 	rawJSONString = strings.TrimSuffix(strings.TrimSpace(rawJSONString), "```")
 
-var finalResult LLMAnalysisResult
-if err := json.Unmarshal([]byte(rawJSONString), &finalResult); err != nil {
+	var finalResult LLMAnalysisResult
+	if err := json.Unmarshal([]byte(rawJSONString), &finalResult); err != nil {
 		return nil, fmt.Errorf("failed to decode inner JSON structure from LLM text: %w. Raw string: %s", err, rawJSONString)
-}
+	}
 
-// Normalize Risk Level
-if finalResult.RiskLevel != "LOW" && finalResult.RiskLevel != "MEDIUM" && finalResult.RiskLevel != "HIGH" && finalResult.RiskLevel != "CRITICAL" {
-finalResult.RiskLevel = "MEDIUM" // Fallback fallback standard
-}
+	// Normalize Risk Level
+	if finalResult.RiskLevel != "LOW" && finalResult.RiskLevel != "MEDIUM" && finalResult.RiskLevel != "HIGH" && finalResult.RiskLevel != "CRITICAL" {
+		finalResult.RiskLevel = "MEDIUM" // Fallback fallback standard
+	}
 
-return &finalResult, nil
+	return &finalResult, nil
 }
