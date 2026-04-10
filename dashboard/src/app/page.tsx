@@ -124,7 +124,7 @@ export default function Dashboard() {
                 </div>
                 <div className="w-1 h-4 bg-indigo-500 rounded-full scale-0 group-hover:scale-100 transition-transform origin-right" />
              </button>
-             <button className="flex items-center justify-between px-3 py-2.5 text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 rounded-lg group transition-colors">
+             <button className="flex items-center justify-between px-3 py-2.5 text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 rounded-lg group transition-colors" onClick={() => window.location.href='/analytics'}>
                 <div className="flex items-center gap-3 font-medium text-sm">
                    <ShieldAlert size={18} />
                    <span>Vulnerabilities</span>
