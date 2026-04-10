@@ -1,11 +1,11 @@
 package main
 
 import (
-"context"
-"encoding/json"
-"fmt"
-"os"
-"sync"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sync"
 )
 
 // InMemoryRepository stores data in RAM, backed up to a JSON file.
@@ -165,17 +165,17 @@ func (r *InMemoryRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 		}
 		a := list[i]
 		records = append(records, PRAnalysisRecord{
-ID:             fmt.Sprintf("repo-%s-pr-%d", a.Repository, a.PRNumber),
-Repository:     a.Repository,
-PRNumber:       a.PRNumber,
-Recommendation: a.Summary.Recommendation,
-TotalFiles:     a.Summary.TotalFiles,
-AIGenerated:    a.Summary.AIGenerated,
-Critical:       a.Summary.Critical,
-High:           a.Summary.High,
-Medium:         a.Summary.Medium,
-Low:            a.Summary.Low,
-})
+			ID:             fmt.Sprintf("repo-%s-pr-%d", a.Repository, a.PRNumber),
+			Repository:     a.Repository,
+			PRNumber:       a.PRNumber,
+			Recommendation: a.Summary.Recommendation,
+			TotalFiles:     a.Summary.TotalFiles,
+			AIGenerated:    a.Summary.AIGenerated,
+			Critical:       a.Summary.Critical,
+			High:           a.Summary.High,
+			Medium:         a.Summary.Medium,
+			Low:            a.Summary.Low,
+		})
 	}
 
 	return records, nil
