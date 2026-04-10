@@ -2,19 +2,77 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
-) // InMemoryRepository stores data in RAM. Ideal for local dev without a Postgres DB.
+)
+
+// InMemoryRepository stores data in RAM, backed up to a JSON file.
+// Ideal for local dev without a Postgres DB while surviving restarts.
 type InMemoryRepository struct {
 	mu           sync.RWMutex
 	analyses     map[string][]*AnalyzeResponse
 	processedWeb map[string]bool
+	dbFile       string
 }
 
 func NewInMemoryRepository() *InMemoryRepository {
-	return &InMemoryRepository{
+	repo := &InMemoryRepository{
 		analyses:     make(map[string][]*AnalyzeResponse),
 		processedWeb: make(map[string]bool),
+		dbFile:       "local_database.json",
+	}
+	repo.loadFromFile()
+	return repo
+}
+
+// DataStruct holds the state we serialize to the hard drive.
+type dbState struct {
+	Analyses     map[string][]*AnalyzeResponse `json:"analyses"`
+	ProcessedWeb map[string]bool               `json:"processedWeb"`
+}
+
+func (r *InMemoryRepository) loadFromFile() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	data, err := os.ReadFile(r.dbFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Printf("failed to load local DB: %v\n", err)
+		}
+		return
+	}
+
+	var state dbState
+	if err := json.Unmarshal(data, &state); err != nil {
+		fmt.Printf("failed to parse local DB: %v\n", err)
+		return
+	}
+
+	if state.Analyses != nil {
+		r.analyses = state.Analyses
+	}
+	if state.ProcessedWeb != nil {
+		r.processedWeb = state.ProcessedWeb
+	}
+}
+
+func (r *InMemoryRepository) saveToFile() {
+	state := dbState{
+		Analyses:     r.analyses,
+		ProcessedWeb: r.processedWeb,
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		fmt.Printf("failed to serialize state: %v\n", err)
+		return
+	}
+
+	if err := os.WriteFile(r.dbFile, data, 0644); err != nil {
+		fmt.Printf("failed to write local DB: %v\n", err)
 	}
 }
 
@@ -23,6 +81,7 @@ func (r *InMemoryRepository) SaveAnalysis(ctx context.Context, response *Analyze
 	defer r.mu.Unlock()
 	repoName := response.Repository
 	r.analyses[repoName] = append(r.analyses[repoName], response)
+	r.saveToFile()
 	return nil
 }
 
@@ -46,6 +105,7 @@ func (r *InMemoryRepository) MarkWebhookProcessed(ctx context.Context, deliveryI
 		return false, nil
 	}
 	r.processedWeb[key] = true
+	r.saveToFile()
 	return true, nil
 }
 
