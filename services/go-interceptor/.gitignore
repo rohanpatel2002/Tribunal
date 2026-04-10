@@ -9,3 +9,4 @@ go-interceptor-bin
 # Go artifacts
 *.exe
 *.test
+local_database.json
