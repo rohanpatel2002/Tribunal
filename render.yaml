@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: tribunal-go-interceptor
+    env: docker
+    repo: https://github.com/rohanpatel2002/Tribunal
+    dockerfilePath: Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: TRIBUNAL_API_KEY
+        sync: false
