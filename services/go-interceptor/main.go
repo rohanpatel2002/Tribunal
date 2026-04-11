@@ -74,6 +74,13 @@ func main() {
 
 	h := NewHandler(repo, ghClient, llmClient)
 
+	// Get allowed origins from environment
+	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
+	if allowedOrigins == "" {
+		allowedOrigins = "http://localhost:3000"
+	}
+	slog.Info("CORS origins configured", "origins", allowedOrigins)
+
 	mux := http.NewServeMux()
 
 	// Public Health Check
@@ -88,14 +95,18 @@ func main() {
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
 
 	// Protect internal tools and audit summaries with Enterprise API Keys if configured.
+	corsWrapper := func(next http.HandlerFunc) http.HandlerFunc {
+		return CORSMiddleware(allowedOrigins, next)
+	}
+
 	if enterpriseAPIKey != "" {
-		mux.HandleFunc("/analyze", RequireAuth(enterpriseAPIKey, h.analyzeHandler))
-		mux.HandleFunc("/api/v1/audit/summary", RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler))
-		mux.HandleFunc("/api/v1/audit/logs", RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler))
+		mux.HandleFunc("/analyze", corsWrapper(RequireAuth(enterpriseAPIKey, h.analyzeHandler)))
+		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler)))
+		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler)))
 	} else {
-		mux.HandleFunc("/analyze", h.analyzeHandler)
-		mux.HandleFunc("/api/v1/audit/summary", h.getAuditSummaryHandler)
-		mux.HandleFunc("/api/v1/audit/logs", h.getAuditLogsHandler)
+		mux.HandleFunc("/analyze", corsWrapper(h.analyzeHandler))
+		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(h.getAuditSummaryHandler))
+		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(h.getAuditLogsHandler))
 	}
 
 	addr := ":" + port

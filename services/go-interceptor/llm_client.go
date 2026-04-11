@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // LLMIntegrator defines the interface for interacting with Large Language Models.
@@ -33,6 +35,7 @@ type OpenRouterClient struct {
 	apiKey     string
 	baseURL    string
 	model      string
+	limiter    *rate.Limiter
 }
 
 // NewOpenRouterClient creates an LLM integrator for OpenRouter.
@@ -42,6 +45,7 @@ func NewOpenRouterClient(apiKey string) *OpenRouterClient {
 		baseURL:    "https://openrouter.ai/api/v1/chat/completions",
 		model:      "meta-llama/llama-3.3-70b-instruct:free", // One of the best free models!
 		apiKey:     apiKey,
+		limiter:    rate.NewLimiter(rate.Limit(0.167), 1), // 0.167 req/sec = ~10 per minute
 	}
 }
 
@@ -49,6 +53,11 @@ func NewOpenRouterClient(apiKey string) *OpenRouterClient {
 func (c *OpenRouterClient) AnalyzeCode(ctx context.Context, filename string, patch string, repoContext string) (*LLMAnalysisResult, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("openrouter api key not configured")
+	}
+
+	// Check rate limit
+	if !c.limiter.Allow() {
+		return nil, fmt.Errorf("rate limit exceeded, retry after 60 seconds")
 	}
 
 	contextAddendum := ""
