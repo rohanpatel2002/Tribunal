@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+const (
+	maxPayloadSize = 1000000 // 1MB max webhook payload
+)
+
 type GitHubWebhookPayload struct {
 	Action     string `json:"action"`
 	Repository struct {
@@ -177,6 +181,10 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+
+	// Limit request body size
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxPayloadSize))
+	defer r.Body.Close()
 
 	deliveryID := r.Header.Get("X-GitHub-Delivery")
 	if deliveryID == "" {
