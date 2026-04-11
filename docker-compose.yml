@@ -33,11 +33,12 @@ services:
       - "8080:8080"
     environment:
       # Inject the connection string to allow the Go app to find the sibling PostgreSQL container
-      - DATABASE_URL=postgres://tribunal:tribunal_password_dev@db:5432/tribunal_db?sslmode=disable
+      - DATABASE_URL=postgres://${POSTGRES_USER:-tribunal}:${POSTGRES_PASSWORD:-tribunal_password_dev}@db:5432/tribunal_db?sslmode=disable
       - PORT=8080
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - TRIBUNAL_API_KEY=dev_enterprise_key_123 # Demo API key for dashboard
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - TRIBUNAL_API_KEY=${TRIBUNAL_API_KEY:?Error: TRIBUNAL_API_KEY not set}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
@@ -52,7 +53,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 10s
