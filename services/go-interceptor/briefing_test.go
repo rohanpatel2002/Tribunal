@@ -7,14 +7,14 @@ import (
 
 func TestGenerateContextBriefing(t *testing.T) {
 	resp := &AnalyzeResponse{
-		Repository:    "rohanpatel2002/tribunal",
-		PRNumber:      12,
-		TotalFiles:    2,
-		AIGenerated:   1,
-		Critical:      1,
-		High:          0,
-		Medium:        0,
-		Low:           1,
+		Repository:     "rohanpatel2002/tribunal",
+		PRNumber:       12,
+		TotalFiles:     2,
+		AIGenerated:    1,
+		Critical:       1,
+		High:           0,
+		Medium:         0,
+		Low:            1,
 		Recommendation: "BLOCK",
 		Files: []FileAnalysis{
 			{
