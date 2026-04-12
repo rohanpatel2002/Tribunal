@@ -19,26 +19,26 @@ func GenerateContextBriefing(resp *AnalyzeResponse) string {
 
 	// Determine risk emoji
 	riskEmoji := "✅"
-	if resp.Summary.Recommendation == "BLOCK" {
+	if resp.Recommendation == "BLOCK" {
 		riskEmoji = "🚨"
-	} else if resp.Summary.Recommendation == "REVIEW_REQUIRED" {
+	} else if resp.Recommendation == "REVIEW_REQUIRED" {
 		riskEmoji = "⚠️"
 	}
 
-	buf.WriteString(fmt.Sprintf("%s **OVERALL STATUS: %s**\n", riskEmoji, resp.Summary.Recommendation))
-	buf.WriteString(fmt.Sprintf("- Files Analyzed: %d\n", resp.Summary.TotalFiles))
-	buf.WriteString(fmt.Sprintf("- AI-Generated Files: %d\n", resp.Summary.AIGenerated))
+	buf.WriteString(fmt.Sprintf("%s **OVERALL STATUS: %s**\n", riskEmoji, resp.Recommendation))
+	buf.WriteString(fmt.Sprintf("- Files Analyzed: %d\n", resp.TotalFiles))
+	buf.WriteString(fmt.Sprintf("- AI-Generated Files: %d\n", resp.AIGenerated))
 
 	buf.WriteString("- Risk Distribution:\n")
-	buf.WriteString(fmt.Sprintf("  - Critical: %d\n", resp.Summary.Critical))
-	buf.WriteString(fmt.Sprintf("  - High: %d\n", resp.Summary.High))
-	buf.WriteString(fmt.Sprintf("  - Medium: %d\n", resp.Summary.Medium))
-	buf.WriteString(fmt.Sprintf("  - Low: %d\n\n", resp.Summary.Low))
+	buf.WriteString(fmt.Sprintf("  - Critical: %d\n", resp.Critical))
+	buf.WriteString(fmt.Sprintf("  - High: %d\n", resp.High))
+	buf.WriteString(fmt.Sprintf("  - Medium: %d\n", resp.Medium))
+	buf.WriteString(fmt.Sprintf("  - Low: %d\n\n", resp.Low))
 
 	// Detailed Findings
-	if resp.Summary.Critical > 0 || resp.Summary.High > 0 {
+	if resp.Critical > 0 || resp.High > 0 {
 		buf.WriteString("## Actionable Findings\n\n")
-		for _, f := range resp.Results {
+		for _, f := range resp.Files {
 			if f.RiskLevel == "CRITICAL" || f.RiskLevel == "HIGH" || f.RiskLevel == "MEDIUM" {
 				buf.WriteString(fmt.Sprintf("### %s\n", f.Path))
 
@@ -74,9 +74,9 @@ func GenerateContextBriefing(resp *AnalyzeResponse) string {
 
 	// Recommendation block
 	buf.WriteString("## Recommendation\n\n")
-	if resp.Summary.Recommendation == "APPROVE" {
+	if resp.Recommendation == "APPROVE" {
 		buf.WriteString("✋ **Low risk**. The changes align with established patterns and do not trigger AI or risk flags. Safe to proceed.\n\n")
-	} else if resp.Summary.Recommendation == "REVIEW_REQUIRED" {
+	} else if resp.Recommendation == "REVIEW_REQUIRED" {
 		buf.WriteString("✋ **REQUEST CHANGES / REVIEW**\n\nMultiple files exhibit anomalous patterns or AI-generation markers. Review the highlighted sections for business logic blindspots or contextual omissions.\n\n")
 	} else {
 		buf.WriteString("🛑 **BLOCK MERGE**\n\nCritical risk files identified. These changes exhibit very high likelihood of completely ignoring core system context (e.g., idempotency, scale, or security constraints). Please rewrite or provide heavy contextual justification.\n\n")

@@ -85,6 +85,7 @@ func main() {
 
 	// Public Health Check
 	mux.HandleFunc("/health", h.healthHandler)
+	mux.HandleFunc("/health/detailed", HealthCheckHandler(repo))
 
 	// Webhooks (Authorized internally mostly by GitHub signature, though not implemented yet; let's keep it open for now)
 	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
@@ -103,10 +104,12 @@ func main() {
 		mux.HandleFunc("/analyze", corsWrapper(RequireAuth(enterpriseAPIKey, h.analyzeHandler)))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler)))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler)))
+		mux.HandleFunc("/api/v1/policies", corsWrapper(RequireAuth(enterpriseAPIKey, PoliciesHandler(repo))))
 	} else {
 		mux.HandleFunc("/analyze", corsWrapper(h.analyzeHandler))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(h.getAuditSummaryHandler))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(h.getAuditLogsHandler))
+		mux.HandleFunc("/api/v1/policies", corsWrapper(PoliciesHandler(repo)))
 	}
 
 	addr := ":" + port

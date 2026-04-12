@@ -13,6 +13,8 @@ import (
 type InMemoryRepository struct {
 	mu           sync.RWMutex
 	analyses     map[string][]*AnalyzeResponse
+	policies     map[string][]*SecurityPolicy
+	events       []*SecurityEvent
 	processedWeb map[string]bool
 	dbFile       string
 }
@@ -29,8 +31,9 @@ func NewInMemoryRepository() *InMemoryRepository {
 
 // DataStruct holds the state we serialize to the hard drive.
 type dbState struct {
-	Analyses     map[string][]*AnalyzeResponse `json:"analyses"`
-	ProcessedWeb map[string]bool               `json:"processedWeb"`
+	Analyses     map[string][]*AnalyzeResponse  `json:"analyses"`
+	Policies     map[string][]*SecurityPolicy  `json:"policies"`
+	ProcessedWeb map[string]bool                `json:"processedWeb"`
 }
 
 func (r *InMemoryRepository) loadFromFile() {
@@ -54,6 +57,9 @@ func (r *InMemoryRepository) loadFromFile() {
 	if state.Analyses != nil {
 		r.analyses = state.Analyses
 	}
+	if state.Policies != nil {
+		r.policies = state.Policies
+	}
 	if state.ProcessedWeb != nil {
 		r.processedWeb = state.ProcessedWeb
 	}
@@ -62,6 +68,7 @@ func (r *InMemoryRepository) loadFromFile() {
 func (r *InMemoryRepository) saveToFile() {
 	state := dbState{
 		Analyses:     r.analyses,
+		Policies:     r.policies,
 		ProcessedWeb: r.processedWeb,
 	}
 
@@ -127,14 +134,14 @@ func (r *InMemoryRepository) GetRepositoryAuditSummary(ctx context.Context, repo
 
 	for _, a := range list {
 		summary.TotalPRs++
-		summary.TotalFiles += a.Summary.TotalFiles
-		if a.Summary.AIGenerated > 0 {
+		summary.TotalFiles += a.TotalFiles
+		if a.AIGenerated > 0 {
 			summary.AIGeneratedPRs++
 		}
-		summary.CriticalRisks += a.Summary.Critical
-		summary.HighRisks += a.Summary.High
+		summary.CriticalRisks += a.Critical
+		summary.HighRisks += a.High
 
-		for _, f := range a.Results {
+		for _, f := range a.Files {
 			sumAIScore += f.AIScore
 			fileCount++
 		}
@@ -168,15 +175,63 @@ func (r *InMemoryRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 			ID:             fmt.Sprintf("repo-%s-pr-%d", a.Repository, a.PRNumber),
 			Repository:     a.Repository,
 			PRNumber:       a.PRNumber,
-			Recommendation: a.Summary.Recommendation,
-			TotalFiles:     a.Summary.TotalFiles,
-			AIGenerated:    a.Summary.AIGenerated,
-			Critical:       a.Summary.Critical,
-			High:           a.Summary.High,
-			Medium:         a.Summary.Medium,
-			Low:            a.Summary.Low,
+			Recommendation: a.Recommendation,
+			TotalFiles:     a.TotalFiles,
+			AIGenerated:    a.AIGenerated,
+			Critical:       a.Critical,
+			High:           a.High,
+			Medium:         a.Medium,
+			Low:            a.Low,
 		})
 	}
 
 	return records, nil
+}
+
+// SaveSecurityPolicy saves a policy to in-memory storage.
+func (r *InMemoryRepository) SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.policies == nil {
+		r.policies = make(map[string][]*SecurityPolicy)
+	}
+
+	// Append or update the policy
+	r.policies[policy.Repository] = append(r.policies[policy.Repository], policy)
+	r.saveToFile()
+	return nil
+}
+
+// GetSecurityPolicies retrieves active policies for a repository.
+func (r *InMemoryRepository) GetSecurityPolicies(ctx context.Context, repository string) ([]SecurityPolicy, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var policies []SecurityPolicy
+	if list, exists := r.policies[repository]; exists {
+		for _, p := range list {
+			if p.IsActive {
+				policies = append(policies, *p)
+			}
+		}
+	}
+	return policies, nil
+}
+
+// DeleteSecurityPolicy deactivates a policy.
+func (r *InMemoryRepository) DeleteSecurityPolicy(ctx context.Context, repository string, policyName string, actor string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if list, exists := r.policies[repository]; exists {
+		for _, p := range list {
+			if p.PolicyName == policyName {
+				p.IsActive = false
+				break
+			}
+		}
+	}
+	r.saveToFile()
+	return nil
 }
