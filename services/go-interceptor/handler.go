@@ -296,14 +296,14 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		markdownBody := GenerateContextBriefing(&resp)
 
 		conclusion := "success"
-		if resp.Summary.Recommendation == "BLOCK" {
+		if resp.Recommendation == "BLOCK" {
 			conclusion = "failure"
-		} else if resp.Summary.Recommendation == "REVIEW_REQUIRED" {
+		} else if resp.Recommendation == "REVIEW_REQUIRED" {
 			conclusion = "neutral"
 		}
 
-		title := fmt.Sprintf("Analysis Complete: %s", resp.Summary.Recommendation)
-		shortSummary := fmt.Sprintf("Analyzed %d files: %d Critical, %d High Risk.", resp.Summary.TotalFiles, resp.Summary.Critical, resp.Summary.High)
+		title := fmt.Sprintf("Analysis Complete: %s", resp.Recommendation)
+		shortSummary := fmt.Sprintf("Analyzed %d files: %d Critical, %d High Risk.", resp.TotalFiles, resp.Critical, resp.High)
 
 		updateOpts := UpdateCheckRunOptions{
 			Status:     "completed",
