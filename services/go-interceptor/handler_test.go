@@ -199,8 +199,8 @@ func TestGetAnalysisHandler_Success(t *testing.T) {
 	mockRepo := &MockRepository{
 		GetFunc: func(ctx context.Context, repo string, pr int) (*AnalyzeResponse, error) {
 			return &AnalyzeResponse{
-				Repository:    repo,
-				PRNumber:      pr,
+				Repository:     repo,
+				PRNumber:       pr,
 				Recommendation: "APPROVE",
 			}, nil
 		},
