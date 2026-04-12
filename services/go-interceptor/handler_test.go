@@ -183,13 +183,25 @@ func (m *MockRepository) GetSubscriptionTier(ctx context.Context, repoFullName s
 	return "FREE", nil
 }
 
+func (m *MockRepository) SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error {
+	return nil
+}
+
+func (m *MockRepository) GetSecurityPolicies(ctx context.Context, repository string) ([]SecurityPolicy, error) {
+	return []SecurityPolicy{}, nil
+}
+
+func (m *MockRepository) DeleteSecurityPolicy(ctx context.Context, repository string, policyName string, actor string) error {
+	return nil
+}
+
 func TestGetAnalysisHandler_Success(t *testing.T) {
 	mockRepo := &MockRepository{
 		GetFunc: func(ctx context.Context, repo string, pr int) (*AnalyzeResponse, error) {
 			return &AnalyzeResponse{
-				Repository: repo,
-				PRNumber:   pr,
-				Summary:    AnalysisSummary{Recommendation: "APPROVE"},
+				Repository:    repo,
+				PRNumber:      pr,
+				Recommendation: "APPROVE",
 			}, nil
 		},
 	}

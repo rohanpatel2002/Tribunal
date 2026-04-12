@@ -48,7 +48,7 @@ func getPoliciesHandler(w http.ResponseWriter, r *http.Request, repo Repository,
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data": policies,
+		"data":  policies,
 		"count": len(policies),
 	})
 }
@@ -129,9 +129,9 @@ func HealthCheckHandler(repo Repository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		health := map[string]interface{}{
-			"status": "healthy",
+			"status":    "healthy",
 			"timestamp": time.Now().UTC(),
-			"version": "1.0.0",
+			"version":   "1.0.0",
 			"checks": map[string]string{
 				"database": "ok",
 			},
@@ -145,12 +145,12 @@ func HealthCheckHandler(repo Repository) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		statusCode := http.StatusOK
 		if health["status"] != "healthy" {
 			statusCode = http.StatusServiceUnavailable
 		}
-		
+
 		w.WriteHeader(statusCode)
 		json.NewEncoder(w).Encode(health)
 	}
@@ -165,7 +165,7 @@ func ErrorRecoveryMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{
-					"error": "internal server error",
+					"error":   "internal server error",
 					"message": fmt.Sprintf("%v", err),
 				})
 			}
@@ -183,12 +183,12 @@ func RequestLoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		startTime := time.Now()
-		
+
 		log.Printf("[%s] %s %s %s", correlationID, r.Method, r.RequestURI, r.RemoteAddr)
-		
+
 		// Call the handler
 		next(w, r)
-		
+
 		duration := time.Since(startTime)
 		log.Printf("[%s] completed in %d ms", correlationID, duration.Milliseconds())
 	}

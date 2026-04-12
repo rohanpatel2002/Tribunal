@@ -309,7 +309,7 @@ func (r *PostgresRepository) SaveSecurityPolicy(ctx context.Context, policy *Sec
 			severity_threshold = EXCLUDED.severity_threshold,
 			updated_at = NOW()
 	`
-	
+
 	rulesJSON, err := json.Marshal(policy.Rules)
 	if err != nil {
 		return fmt.Errorf("failed to marshal rules: %w", err)
@@ -336,9 +336,9 @@ func (r *PostgresRepository) SaveSecurityPolicy(ctx context.Context, policy *Sec
 	`
 	actionDetails := map[string]string{"policy_name": policy.PolicyName}
 	actionJSON, _ := json.Marshal(actionDetails)
-	
+
 	_, _ = r.pool.Exec(ctx, eventQuery, policy.Repository, policy.CreatedBy, actionJSON)
-	
+
 	return nil
 }
 
@@ -350,7 +350,7 @@ func (r *PostgresRepository) GetSecurityPolicies(ctx context.Context, repository
 		WHERE repository = $1 AND is_active = TRUE
 		ORDER BY created_at DESC
 	`
-	
+
 	rows, err := r.pool.Query(ctx, query, repository)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query security policies: %w", err)
@@ -361,7 +361,7 @@ func (r *PostgresRepository) GetSecurityPolicies(ctx context.Context, repository
 	for rows.Next() {
 		var policy SecurityPolicy
 		var rulesJSON []byte
-		
+
 		err := rows.Scan(
 			&policy.ID,
 			&policy.Repository,
@@ -395,7 +395,7 @@ func (r *PostgresRepository) DeleteSecurityPolicy(ctx context.Context, repositor
 		SET is_active = FALSE, updated_at = NOW()
 		WHERE repository = $1 AND policy_name = $2
 	`
-	
+
 	_, err := r.pool.Exec(ctx, query, repository, policyName)
 	if err != nil {
 		return fmt.Errorf("failed to delete policy: %w", err)
@@ -408,7 +408,7 @@ func (r *PostgresRepository) DeleteSecurityPolicy(ctx context.Context, repositor
 	`
 	actionDetails := map[string]string{"policy_name": policyName}
 	actionJSON, _ := json.Marshal(actionDetails)
-	
+
 	_, _ = r.pool.Exec(ctx, eventQuery, repository, actor, actionJSON)
 
 	return nil
