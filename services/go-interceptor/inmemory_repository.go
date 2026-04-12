@@ -31,9 +31,9 @@ func NewInMemoryRepository() *InMemoryRepository {
 
 // DataStruct holds the state we serialize to the hard drive.
 type dbState struct {
-	Analyses     map[string][]*AnalyzeResponse  `json:"analyses"`
+	Analyses     map[string][]*AnalyzeResponse `json:"analyses"`
 	Policies     map[string][]*SecurityPolicy  `json:"policies"`
-	ProcessedWeb map[string]bool                `json:"processedWeb"`
+	ProcessedWeb map[string]bool               `json:"processedWeb"`
 }
 
 func (r *InMemoryRepository) loadFromFile() {
