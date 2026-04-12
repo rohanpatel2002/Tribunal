@@ -81,12 +81,24 @@ func main() {
 	}
 	slog.Info("CORS origins configured", "origins", allowedOrigins)
 
+	// Configure webhook security
+	githubWebhookSecret := os.Getenv("GITHUB_WEBHOOK_SECRET")
+	_ = os.Getenv("GITLAB_WEBHOOK_SECRET")    // Future: GitLab webhook support
+	_ = os.Getenv("BITBUCKET_WEBHOOK_SECRET") // Future: Bitbucket webhook support
+
+	if githubWebhookSecret != "" {
+		slog.Info("GitHub webhook signature verification enabled")
+	} else {
+		slog.Warn("GITHUB_WEBHOOK_SECRET not set, webhook signature verification disabled (development mode)")
+	}
+
 	mux := http.NewServeMux()
 
 	// Public Health Check
 	mux.HandleFunc("/health", h.healthHandler)
+	mux.HandleFunc("/health/detailed", HealthCheckHandler(repo))
 
-	// Webhooks (Authorized internally mostly by GitHub signature, though not implemented yet; let's keep it open for now)
+	// Webhooks with signature verification
 	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
 	mux.HandleFunc("/webhook/gitlab", h.gitlabWebhookHandler)
 	mux.HandleFunc("/webhook/bitbucket", h.bitbucketWebhookHandler)
@@ -103,10 +115,18 @@ func main() {
 		mux.HandleFunc("/analyze", corsWrapper(RequireAuth(enterpriseAPIKey, h.analyzeHandler)))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler)))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler)))
+		mux.HandleFunc("/api/v1/audit/export", corsWrapper(RequireAuth(enterpriseAPIKey, ExportHandler(repo))))
+		mux.HandleFunc("/api/v1/policies", corsWrapper(RequireAuth(enterpriseAPIKey, PoliciesHandler(repo))))
+		mux.HandleFunc("/api/v1/api-keys", corsWrapper(RequireAuth(enterpriseAPIKey, h.listAPIKeysHandler)))
+		mux.HandleFunc("/api/v1/api-keys/rotate", corsWrapper(RequireAuth(enterpriseAPIKey, h.rotateAPIKeyHandler)))
 	} else {
 		mux.HandleFunc("/analyze", corsWrapper(h.analyzeHandler))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(h.getAuditSummaryHandler))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(h.getAuditLogsHandler))
+		mux.HandleFunc("/api/v1/audit/export", corsWrapper(ExportHandler(repo)))
+		mux.HandleFunc("/api/v1/policies", corsWrapper(PoliciesHandler(repo)))
+		mux.HandleFunc("/api/v1/api-keys", corsWrapper(h.listAPIKeysHandler))
+		mux.HandleFunc("/api/v1/api-keys/rotate", corsWrapper(h.rotateAPIKeyHandler))
 	}
 
 	addr := ":" + port

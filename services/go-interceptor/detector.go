@@ -228,10 +228,16 @@ func BuildResponse(ctx context.Context, req AnalyzeRequest, llm LLMIntegrator, r
 	summary.Recommendation = buildRecommendation(summary)
 
 	return AnalyzeResponse{
-		Repository: req.Repository,
-		PRNumber:   req.PRNumber,
-		Summary:    summary,
-		Results:    results,
+		Repository:     req.Repository,
+		PRNumber:       req.PRNumber,
+		Recommendation: summary.Recommendation,
+		TotalFiles:     summary.TotalFiles,
+		AIGenerated:    summary.AIGenerated,
+		Critical:       summary.Critical,
+		High:           summary.High,
+		Medium:         summary.Medium,
+		Low:            summary.Low,
+		Files:          results,
 	}
 }
 

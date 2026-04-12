@@ -150,12 +150,32 @@ func (h *Handler) getAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pagination parameters
 	limit := 50
 	limitStr := r.URL.Query().Get("limit")
 	if limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 500 {
 			limit = parsed
 		}
+	}
+
+	offset := 0
+	offsetStr := r.URL.Query().Get("offset")
+	if offsetStr != "" {
+		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Filtering by severity
+	severityFilter := r.URL.Query().Get("severity")
+	recommendationFilter := r.URL.Query().Get("recommendation")
+
+	// Sorting (default: createdAt DESC)
+	sortBy := r.URL.Query().Get("sortBy")       // "date", "aiScore", "prNumber"
+	sortOrder := r.URL.Query().Get("sortOrder") // "asc", "desc"
+	if sortOrder != "asc" {
+		sortOrder = "desc" // default
 	}
 
 	if h.repo == nil {
@@ -173,7 +193,40 @@ func (h *Handler) getAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 	if records == nil {
 		records = []PRAnalysisRecord{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": records})
+
+	// Apply filtering
+	filtered := records
+	if severityFilter != "" {
+		filtered = filterBySeverity(filtered, severityFilter)
+	}
+	if recommendationFilter != "" {
+		filtered = filterByRecommendation(filtered, recommendationFilter)
+	}
+
+	// Apply sorting
+	sortRecords(filtered, sortBy, sortOrder)
+
+	// Apply pagination on filtered results
+	total := len(filtered)
+	if offset >= total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	paginated := filtered[offset:end]
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data":        paginated,
+		"total":       total,
+		"limit":       limit,
+		"offset":      offset,
+		"hasMore":     end < total,
+		"pageCount":   (total + limit - 1) / limit,
+		"currentPage": (offset / limit) + 1,
+	})
 }
 
 func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -296,14 +349,14 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		markdownBody := GenerateContextBriefing(&resp)
 
 		conclusion := "success"
-		if resp.Summary.Recommendation == "BLOCK" {
+		if resp.Recommendation == "BLOCK" {
 			conclusion = "failure"
-		} else if resp.Summary.Recommendation == "REVIEW_REQUIRED" {
+		} else if resp.Recommendation == "REVIEW_REQUIRED" {
 			conclusion = "neutral"
 		}
 
-		title := fmt.Sprintf("Analysis Complete: %s", resp.Summary.Recommendation)
-		shortSummary := fmt.Sprintf("Analyzed %d files: %d Critical, %d High Risk.", resp.Summary.TotalFiles, resp.Summary.Critical, resp.Summary.High)
+		title := fmt.Sprintf("Analysis Complete: %s", resp.Recommendation)
+		shortSummary := fmt.Sprintf("Analyzed %d files: %d Critical, %d High Risk.", resp.TotalFiles, resp.Critical, resp.High)
 
 		updateOpts := UpdateCheckRunOptions{
 			Status:     "completed",
@@ -454,6 +507,15 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	repoContext := ""
 	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
 
+	// Enforce security policies against the analysis result
+	if h.repo != nil {
+		enforcer := NewPolicyEnforcer(h.repo)
+		if err := enforcer.EnforcePolicy(r.Context(), &resp, req.Repository); err != nil {
+			slog.Warn("policy enforcement failed", "error", err, "repo", req.Repository)
+			// Continue - enforcement is advisory, not blocking
+		}
+	}
+
 	// Persist the analysis if a repository is configured
 	if h.repo != nil {
 		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
@@ -522,4 +584,134 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (h *Handler) listAPIKeysHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	repository := r.URL.Query().Get("repository")
+	if repository == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing repository query parameter"})
+		return
+	}
+
+	if h.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	keys, err := ListActiveAPIKeys(h.repo, repository)
+	if err != nil {
+		slog.Error("failed to list API keys", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to retrieve keys"})
+		return
+	}
+
+	if keys == nil {
+		keys = []*APIKeyMetadata{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"keys": keys})
+}
+
+func (h *Handler) rotateAPIKeyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req APIKeyRotationRequest
+	if err := decodeJSONBody(r.Body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.CurrentKeyID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "currentKeyId is required"})
+		return
+	}
+
+	if h.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	response, err := RotateAPIKey(h.repo, req.CurrentKeyID, req.Name)
+	if err != nil {
+		slog.Error("failed to rotate API key", "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// filterBySeverity filters audit records by risk severity
+func filterBySeverity(records []PRAnalysisRecord, severity string) []PRAnalysisRecord {
+	var filtered []PRAnalysisRecord
+	for _, record := range records {
+		switch strings.ToLower(severity) {
+		case "critical":
+			if record.Critical > 0 {
+				filtered = append(filtered, record)
+			}
+		case "high":
+			if record.High > 0 {
+				filtered = append(filtered, record)
+			}
+		case "medium":
+			if record.Medium > 0 {
+				filtered = append(filtered, record)
+			}
+		case "low":
+			if record.Low > 0 {
+				filtered = append(filtered, record)
+			}
+		}
+	}
+	return filtered
+}
+
+// filterByRecommendation filters audit records by recommendation status
+func filterByRecommendation(records []PRAnalysisRecord, recommendation string) []PRAnalysisRecord {
+	var filtered []PRAnalysisRecord
+	rec := strings.ToUpper(recommendation)
+	for _, record := range records {
+		if record.Recommendation == rec {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+// sortRecords sorts audit records by specified field
+func sortRecords(records []PRAnalysisRecord, sortBy string, sortOrder string) {
+	isDesc := sortOrder == "desc"
+
+	switch strings.ToLower(sortBy) {
+	case "prnumber":
+		if isDesc {
+			for i := 0; i < len(records)-1; i++ {
+				for j := i + 1; j < len(records); j++ {
+					if records[j].PRNumber > records[i].PRNumber {
+						records[i], records[j] = records[j], records[i]
+					}
+				}
+			}
+		} else {
+			for i := 0; i < len(records)-1; i++ {
+				for j := i + 1; j < len(records); j++ {
+					if records[j].PRNumber < records[i].PRNumber {
+						records[i], records[j] = records[j], records[i]
+					}
+				}
+			}
+		}
+	case "aiscore":
+		// Note: Would need to fetch file details to get AI score, skip for now
+	default:
+		// Default sort is by PR number descending (most recent first)
+	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -63,13 +64,13 @@ func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *Analyze
 	err = tx.QueryRow(ctx, insertPRQuery,
 		response.Repository,
 		response.PRNumber,
-		response.Summary.Recommendation,
-		response.Summary.TotalFiles,
-		response.Summary.AIGenerated,
-		response.Summary.Critical,
-		response.Summary.High,
-		response.Summary.Medium,
-		response.Summary.Low,
+		response.Recommendation,
+		response.TotalFiles,
+		response.AIGenerated,
+		response.Critical,
+		response.High,
+		response.Medium,
+		response.Low,
 	).Scan(&prAnalysisID)
 
 	if err != nil {
@@ -86,7 +87,7 @@ func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *Analyze
 		)`
 
 	batch := &pgx.Batch{}
-	for _, result := range response.Results {
+	for _, result := range response.Files {
 		batch.Queue(insertFileQuery,
 			prAnalysisID,
 			result.Path,
@@ -139,13 +140,13 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 	var prAnalysisID string
 	err := r.pool.QueryRow(ctx, queryPR, repository, prNumber).Scan(
 		&prAnalysisID,
-		&resp.Summary.Recommendation,
-		&resp.Summary.TotalFiles,
-		&resp.Summary.AIGenerated,
-		&resp.Summary.Critical,
-		&resp.Summary.High,
-		&resp.Summary.Medium,
-		&resp.Summary.Low,
+		&resp.Recommendation,
+		&resp.TotalFiles,
+		&resp.AIGenerated,
+		&resp.Critical,
+		&resp.High,
+		&resp.Medium,
+		&resp.Low,
 	)
 
 	if err != nil {
@@ -184,7 +185,7 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan file analysis row: %w", err)
 		}
-		resp.Results = append(resp.Results, file)
+		resp.Files = append(resp.Files, file)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -293,4 +294,122 @@ func (r *PostgresRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 		results = append(results, rec)
 	}
 	return results, rows.Err()
+}
+
+// SaveSecurityPolicy persists a security policy to the database.
+func (r *PostgresRepository) SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error {
+	query := `
+		INSERT INTO security_policies (repository, policy_name, policy_type, description, rules, is_active, severity_threshold, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+		ON CONFLICT (repository, policy_name) DO UPDATE SET
+			policy_type = EXCLUDED.policy_type,
+			description = EXCLUDED.description,
+			rules = EXCLUDED.rules,
+			is_active = EXCLUDED.is_active,
+			severity_threshold = EXCLUDED.severity_threshold,
+			updated_at = NOW()
+	`
+
+	rulesJSON, err := json.Marshal(policy.Rules)
+	if err != nil {
+		return fmt.Errorf("failed to marshal rules: %w", err)
+	}
+
+	_, err = r.pool.Exec(ctx, query,
+		policy.Repository,
+		policy.PolicyName,
+		policy.PolicyType,
+		policy.Description,
+		rulesJSON,
+		policy.IsActive,
+		policy.SeverityThreshold,
+		policy.CreatedBy,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save security policy: %w", err)
+	}
+
+	// Log the event
+	eventQuery := `
+		INSERT INTO security_events (event_type, repository, actor, action_details, severity, created_at)
+		VALUES ('POLICY_CREATED', $1, $2, $3, 'INFO', NOW())
+	`
+	actionDetails := map[string]string{"policy_name": policy.PolicyName}
+	actionJSON, _ := json.Marshal(actionDetails)
+
+	_, _ = r.pool.Exec(ctx, eventQuery, policy.Repository, policy.CreatedBy, actionJSON)
+
+	return nil
+}
+
+// GetSecurityPolicies retrieves all active policies for a repository.
+func (r *PostgresRepository) GetSecurityPolicies(ctx context.Context, repository string) ([]SecurityPolicy, error) {
+	query := `
+		SELECT id::text, repository, policy_name, policy_type, description, rules, is_active, severity_threshold, created_at
+		FROM security_policies
+		WHERE repository = $1 AND is_active = TRUE
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.pool.Query(ctx, query, repository)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query security policies: %w", err)
+	}
+	defer rows.Close()
+
+	var policies []SecurityPolicy
+	for rows.Next() {
+		var policy SecurityPolicy
+		var rulesJSON []byte
+
+		err := rows.Scan(
+			&policy.ID,
+			&policy.Repository,
+			&policy.PolicyName,
+			&policy.PolicyType,
+			&policy.Description,
+			&rulesJSON,
+			&policy.IsActive,
+			&policy.SeverityThreshold,
+			&policy.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan policy: %w", err)
+		}
+
+		err = json.Unmarshal(rulesJSON, &policy.Rules)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal rules: %w", err)
+		}
+
+		policies = append(policies, policy)
+	}
+
+	return policies, rows.Err()
+}
+
+// DeleteSecurityPolicy deactivates a security policy.
+func (r *PostgresRepository) DeleteSecurityPolicy(ctx context.Context, repository string, policyName string, actor string) error {
+	query := `
+		UPDATE security_policies
+		SET is_active = FALSE, updated_at = NOW()
+		WHERE repository = $1 AND policy_name = $2
+	`
+
+	_, err := r.pool.Exec(ctx, query, repository, policyName)
+	if err != nil {
+		return fmt.Errorf("failed to delete policy: %w", err)
+	}
+
+	// Log event
+	eventQuery := `
+		INSERT INTO security_events (event_type, repository, actor, action_details, severity, created_at)
+		VALUES ('POLICY_DELETED', $1, $2, $3, 'WARNING', NOW())
+	`
+	actionDetails := map[string]string{"policy_name": policyName}
+	actionJSON, _ := json.Marshal(actionDetails)
+
+	_, _ = r.pool.Exec(ctx, eventQuery, repository, actor, actionJSON)
+
+	return nil
 }
