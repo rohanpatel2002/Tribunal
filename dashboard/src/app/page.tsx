@@ -486,8 +486,8 @@ function VulnerabilitiesView({ data, logs }: any) {
              <tbody className="divide-y divide-[#1F1F22]">
                {riskyLogs.length === 0 ? (
                  <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No active vulnerabilities found. You are secure.</td></tr>
-               ) : riskyLogs.map((log: any) => (
-                 <tr key={log.id} className="hover:bg-[#141416] transition-colors group cursor-pointer">
+               ) : riskyLogs.map((log: any, index: number) => (
+                 <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
                    <td className="px-6 py-4"><span className="font-mono text-slate-300">#{log.prNumber}</span></td>
                    <td className="px-6 py-4">
                      {log.critical > 0 ? (
@@ -640,8 +640,8 @@ function LogTable({ logs, title }: any) {
            <tbody className="divide-y divide-[#1F1F22]">
              {logs.length === 0 ? (
                <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No recent payload intercepted.</td></tr>
-             ) : logs.map((log: any) => (
-               <tr key={log.id} className="hover:bg-[#141416] transition-colors group cursor-pointer">
+             ) : logs.map((log: any, index: number) => (
+               <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
                  <td className="px-6 py-3.5">
                    <div className="flex items-center gap-2">
                      <GitPullRequest size={14} className="text-slate-500" />
