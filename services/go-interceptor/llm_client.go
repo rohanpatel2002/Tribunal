@@ -38,6 +38,13 @@ type OpenRouterClient struct {
 	limiter    *rate.Limiter
 }
 
+var allowedRiskLevels = map[string]struct{}{
+	"LOW":      {},
+	"MEDIUM":   {},
+	"HIGH":     {},
+	"CRITICAL": {},
+}
+
 // NewOpenRouterClient creates an LLM integrator for OpenRouter.
 func NewOpenRouterClient(apiKey string) *OpenRouterClient {
 	return &OpenRouterClient{
@@ -136,20 +143,55 @@ Code Patch:
 
 	rawJSONString := openRouterResp.Choices[0].Message.Content
 
-	// Clean up markdown if the LLM hallucinated it despite our instructions
-	rawJSONString = strings.TrimPrefix(rawJSONString, "```json")
-	rawJSONString = strings.TrimPrefix(rawJSONString, "```")
-	rawJSONString = strings.TrimSuffix(strings.TrimSpace(rawJSONString), "```")
-
-	var finalResult LLMAnalysisResult
-	if err := json.Unmarshal([]byte(rawJSONString), &finalResult); err != nil {
-		return nil, fmt.Errorf("failed to decode inner JSON structure from LLM text: %w. Raw string: %s", err, rawJSONString)
+	finalResult, err := parseAndNormalizeLLMResult(rawJSONString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse normalized LLM result: %w", err)
 	}
 
-	// Normalize Risk Level
-	if finalResult.RiskLevel != "LOW" && finalResult.RiskLevel != "MEDIUM" && finalResult.RiskLevel != "HIGH" && finalResult.RiskLevel != "CRITICAL" {
-		finalResult.RiskLevel = "MEDIUM" // Fallback fallback standard
+	return finalResult, nil
+}
+
+func parseAndNormalizeLLMResult(raw string) (*LLMAnalysisResult, error) {
+	cleaned := stripCodeFence(raw)
+
+	var result LLMAnalysisResult
+	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+		return nil, fmt.Errorf("failed to decode inner JSON structure from LLM text: %w. raw string: %s", err, cleaned)
 	}
 
-	return &finalResult, nil
+	normalizeLLMAnalysisResult(&result)
+	return &result, nil
+}
+
+func stripCodeFence(s string) string {
+	trimmed := strings.TrimSpace(s)
+	trimmed = strings.TrimPrefix(trimmed, "```json")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(strings.TrimSpace(trimmed), "```")
+	return strings.TrimSpace(trimmed)
+}
+
+func normalizeLLMAnalysisResult(result *LLMAnalysisResult) {
+	result.RiskLevel = strings.ToUpper(strings.TrimSpace(result.RiskLevel))
+	if _, ok := allowedRiskLevels[result.RiskLevel]; !ok {
+		result.RiskLevel = "MEDIUM"
+	}
+
+	result.AIScore = clamp01(result.AIScore)
+	result.Confidence = clamp01(result.Confidence)
+	result.Summary = strings.TrimSpace(result.Summary)
+	result.SuggestedFix = strings.TrimSpace(result.SuggestedFix)
+
+	// Keep downstream logic deterministic with score threshold if the model omitted/contradicted boolean.
+	result.IsAIGenerated = result.IsAIGenerated || result.AIScore >= 0.70
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
