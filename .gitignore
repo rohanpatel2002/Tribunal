@@ -23,6 +23,7 @@ env/
 
 # Node
 node_modules/
+dashboard/node_modules 3/
 .next/
 dist/
 build/
