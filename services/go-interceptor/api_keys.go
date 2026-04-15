@@ -7,9 +7,17 @@ import (
 	"time"
 )
 
+type apiKeyStore interface {
+	GetAPIKeyMetadata(keyID string) (*APIKeyMetadata, error)
+	CreateAPIKey(metadata *APIKeyMetadata, keySecret string) error
+	DeprecateAPIKey(keyID string, expiresAt time.Time) error
+	ListActiveAPIKeys(repository string) ([]*APIKeyMetadata, error)
+}
+
 // APIKeyMetadata stores API key information with rotation tracking
 type APIKeyMetadata struct {
 	KeyID           string    `json:"keyId" db:"key_id"`
+	Repository      string    `json:"repository,omitempty" db:"repository"`
 	KeyHash         string    `json:"keyHash" db:"key_hash"`
 	Name            string    `json:"name" db:"name"`
 	CreatedAt       time.Time `json:"createdAt" db:"created_at"`
@@ -81,6 +89,7 @@ func RotateAPIKey(repo Repository, currentKeyID, name string) (*APIKeyRotationRe
 	// Create new key metadata
 	newMetadata := &APIKeyMetadata{
 		KeyID:       newKeyID,
+		Repository:  currentKey.Repository,
 		Name:        name,
 		CreatedAt:   time.Now(),
 		LastUsedAt:  time.Now(),
@@ -115,6 +124,10 @@ func RotateAPIKey(repo Repository, currentKeyID, name string) (*APIKeyRotationRe
 
 // GetAPIKeyMetadata retrieves API key metadata (should be implemented by Repository)
 func GetAPIKeyMetadata(repo Repository, keyID string) (*APIKeyMetadata, error) {
+	if store, ok := repo.(apiKeyStore); ok {
+		return store.GetAPIKeyMetadata(keyID)
+	}
+
 	// For now, return placeholder metadata
 	// In production, this would query the database
 	now := time.Now()
@@ -123,6 +136,7 @@ func GetAPIKeyMetadata(repo Repository, keyID string) (*APIKeyMetadata, error) {
 
 	return &APIKeyMetadata{
 		KeyID:           keyID,
+		Repository:      "global",
 		Name:            "Default API Key",
 		CreatedAt:       now.AddDate(0, 0, -30),
 		LastUsedAt:      now.Add(-1 * time.Hour),
@@ -135,33 +149,30 @@ func GetAPIKeyMetadata(repo Repository, keyID string) (*APIKeyMetadata, error) {
 
 // CreateAPIKey stores a new API key in the database (should be implemented by Repository)
 func CreateAPIKey(repo Repository, metadata *APIKeyMetadata, keySecret string) error {
-	// This is a placeholder - actual implementation depends on DB choice
-	// For in-memory: store in map with hash of keySecret
-	// For PostgreSQL: INSERT into api_keys table
-	return nil
+	if store, ok := repo.(apiKeyStore); ok {
+		return store.CreateAPIKey(metadata, keySecret)
+	}
+
+	return fmt.Errorf("repository does not support API key creation")
 }
 
 // DeprecateAPIKey marks a key as deprecated with an expiry time (should be implemented by Repository)
 func DeprecateAPIKey(repo Repository, keyID string, expiresAt time.Time) error {
-	// This is a placeholder - actual implementation depends on DB choice
-	return nil
+	if store, ok := repo.(apiKeyStore); ok {
+		return store.DeprecateAPIKey(keyID, expiresAt)
+	}
+
+	return fmt.Errorf("repository does not support API key deprecation")
 }
 
 // ListActiveAPIKeys retrieves all active API keys for a repository (should be implemented by Repository)
 func ListActiveAPIKeys(repo Repository, repository string) ([]*APIKeyMetadata, error) {
-	// Placeholder implementation
-	return []*APIKeyMetadata{
-		{
-			KeyID:           "kid_abc123def456",
-			Name:            "Production Key",
-			CreatedAt:       time.Now().AddDate(0, 0, -30),
-			LastUsedAt:      time.Now().Add(-1 * time.Hour),
-			ExpiresAt:       time.Now().AddDate(0, 0, 60),
-			IsActive:        true,
-			RotationDue:     false,
-			DaysUntilExpiry: 60,
-		},
-	}, nil
+	if store, ok := repo.(apiKeyStore); ok {
+		return store.ListActiveAPIKeys(repository)
+	}
+
+	// Placeholder implementation for non-API-key-aware repositories.
+	return []*APIKeyMetadata{}, nil
 }
 
 // CheckKeyExpiry checks if a key is expired or approaching expiry
