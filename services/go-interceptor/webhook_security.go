@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -39,13 +40,17 @@ func VerifyGitHubSignature(secret string, payload []byte, signature string) bool
 		return false
 	}
 
-	expectedSignature := "sha256=" + hex.EncodeToString(
-		hmac.New(sha256.New, []byte(secret)).Sum(
-			append([]byte{}, payload...),
-		),
-	)
+	providedHex := strings.TrimPrefix(signature, "sha256=")
+	providedSig, err := hex.DecodeString(providedHex)
+	if err != nil {
+		return false
+	}
 
-	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	expectedSig := mac.Sum(nil)
+
+	return hmac.Equal(providedSig, expectedSig)
 }
 
 // VerifyGitLabSignature validates the GitLab webhook signature
@@ -54,12 +59,9 @@ func VerifyGitLabSignature(secret string, payload []byte, token string) bool {
 	if secret == "" {
 		return true
 	}
-	return hmac.Equal(
-		[]byte(token),
-		[]byte(hex.EncodeToString(
-			hmac.New(sha256.New, []byte(secret)).Sum(payload),
-		)),
-	)
+	// GitLab webhook token is a shared secret sent as plaintext token header.
+	_ = payload
+	return hmac.Equal([]byte(token), []byte(secret))
 }
 
 // VerifyBitbucketSignature validates Bitbucket webhook signature
@@ -69,11 +71,21 @@ func VerifyBitbucketSignature(secret string, payload []byte, signature string) b
 		return true
 	}
 
-	expected := hex.EncodeToString(
-		hmac.New(sha256.New, []byte(secret)).Sum(payload),
-	)
+	provided := signature
+	if strings.HasPrefix(provided, "sha256=") {
+		provided = strings.TrimPrefix(provided, "sha256=")
+	}
 
-	return hmac.Equal([]byte(signature), []byte(expected))
+	providedSig, err := hex.DecodeString(provided)
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	expected := mac.Sum(nil)
+
+	return hmac.Equal(providedSig, expected)
 }
 
 // WebhookSignatureMiddleware verifies webhook signatures before processing
@@ -94,7 +106,7 @@ func WebhookSignatureMiddleware(secret string, provider string) func(http.Handle
 				return
 			}
 			// Replace body so it can be read again by the handler
-			r.Body = io.NopCloser(strings.NewReader(string(body)))
+			r.Body = io.NopCloser(bytes.NewReader(body))
 
 			// Verify signature based on provider
 			var isValid bool
