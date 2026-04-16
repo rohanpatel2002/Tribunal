@@ -143,7 +143,7 @@ func main() {
 	addr := ":" + port
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      SecurityHeadersMiddleware(mux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,
