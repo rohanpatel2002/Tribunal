@@ -83,8 +83,8 @@ func main() {
 
 	// Configure webhook security
 	githubWebhookSecret := os.Getenv("GITHUB_WEBHOOK_SECRET")
-	_ = os.Getenv("GITLAB_WEBHOOK_SECRET")    // Future: GitLab webhook support
-	_ = os.Getenv("BITBUCKET_WEBHOOK_SECRET") // Future: Bitbucket webhook support
+	gitlabWebhookSecret := os.Getenv("GITLAB_WEBHOOK_SECRET")
+	bitbucketWebhookSecret := os.Getenv("BITBUCKET_WEBHOOK_SECRET")
 
 	if githubWebhookSecret != "" {
 		slog.Info("GitHub webhook signature verification enabled")
@@ -99,9 +99,20 @@ func main() {
 	mux.HandleFunc("/health/detailed", HealthCheckHandler(repo))
 
 	// Webhooks with signature verification
-	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
-	mux.HandleFunc("/webhook/gitlab", h.gitlabWebhookHandler)
-	mux.HandleFunc("/webhook/bitbucket", h.bitbucketWebhookHandler)
+	githubWebhookHandler := http.Handler(http.HandlerFunc(h.githubWebhookHandler))
+	githubWebhookHandler = WebhookSignatureMiddleware(githubWebhookSecret, "github")(githubWebhookHandler)
+	githubWebhookHandler = RateLimitWebhooks(120, time.Minute)(githubWebhookHandler)
+	mux.Handle("/webhook/github", githubWebhookHandler)
+
+	gitlabWebhookHandler := http.Handler(http.HandlerFunc(h.gitlabWebhookHandler))
+	gitlabWebhookHandler = WebhookSignatureMiddleware(gitlabWebhookSecret, "gitlab")(gitlabWebhookHandler)
+	gitlabWebhookHandler = RateLimitWebhooks(120, time.Minute)(gitlabWebhookHandler)
+	mux.Handle("/webhook/gitlab", gitlabWebhookHandler)
+
+	bitbucketWebhookHandler := http.Handler(http.HandlerFunc(h.bitbucketWebhookHandler))
+	bitbucketWebhookHandler = WebhookSignatureMiddleware(bitbucketWebhookSecret, "bitbucket")(bitbucketWebhookHandler)
+	bitbucketWebhookHandler = RateLimitWebhooks(120, time.Minute)(bitbucketWebhookHandler)
+	mux.Handle("/webhook/bitbucket", bitbucketWebhookHandler)
 
 	// Public read endpoint for specific PRs
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)

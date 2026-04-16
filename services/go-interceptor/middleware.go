@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 )
@@ -31,8 +32,16 @@ func RequireAuth(expectedKey string, next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Bearer <token>
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || parts[1] != expectedKey {
+		scheme, token, found := strings.Cut(authHeader, " ")
+		if !found || !strings.EqualFold(strings.TrimSpace(scheme), "bearer") {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": "invalid or missing api key",
+			})
+			return
+		}
+
+		token = strings.TrimSpace(token)
+		if subtle.ConstantTimeCompare([]byte(token), []byte(expectedKey)) != 1 {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{
 				"error": "invalid or missing api key",
 			})
