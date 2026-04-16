@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	maxPayloadSize = 1000000 // 1MB max webhook payload
+	maxPayloadSize = 1000000 // 1MB max request payload
 )
 
 type GitHubWebhookPayload struct {
@@ -382,6 +382,9 @@ func (h *Handler) gitlabWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxPayloadSize))
+	defer r.Body.Close()
+
 	// GitLab sends X-Gitlab-Event
 	event := r.Header.Get("X-Gitlab-Event")
 	if event == "" {
@@ -441,6 +444,9 @@ func (h *Handler) bitbucketWebhookHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxPayloadSize))
+	defer r.Body.Close()
+
 	// Bitbucket sends X-Event-Key
 	event := r.Header.Get("X-Event-Key")
 	if event == "" {
@@ -491,6 +497,9 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxPayloadSize))
+	defer r.Body.Close()
 
 	var req AnalyzeRequest
 	if err := decodeJSONBody(r.Body, &req); err != nil {
@@ -573,7 +582,8 @@ func decodeJSONBody(body io.Reader, target any) error {
 		return fmt.Errorf("invalid JSON payload")
 	}
 
-	if decoder.More() {
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); err != io.EOF {
 		return fmt.Errorf("invalid JSON payload: multiple JSON values are not allowed")
 	}
 
@@ -621,6 +631,9 @@ func (h *Handler) rotateAPIKeyHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxPayloadSize))
+	defer r.Body.Close()
 
 	var req APIKeyRotationRequest
 	if err := decodeJSONBody(r.Body, &req); err != nil {

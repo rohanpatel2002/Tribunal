@@ -55,8 +55,11 @@ func getPoliciesHandler(w http.ResponseWriter, r *http.Request, repo Repository,
 
 // createPolicyHandler creates a new security policy
 func createPolicyHandler(w http.ResponseWriter, r *http.Request, repo Repository, repository string) {
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxPayloadSize))
+	defer r.Body.Close()
+
 	var policy SecurityPolicy
-	err := json.NewDecoder(r.Body).Decode(&policy)
+	err := decodeJSONBody(r.Body, &policy)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
