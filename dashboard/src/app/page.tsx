@@ -78,7 +78,7 @@ function DashboardContent() {
   const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [repo, setRepo] = useState('rohanpatel2002/tribunal');
-  const apiKey = 'dev_enterprise_key_123';
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? 'dev_enterprise_key_123';
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
