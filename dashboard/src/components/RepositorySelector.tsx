@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { GitPullRequest, ChevronDown, Check, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -27,16 +27,16 @@ export function RepositorySelector({
 }: RepositorySelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredRepos, setFilteredRepos] = useState<Repository[]>(repositories);
 
-  useEffect(() => {
-    const filtered = repositories.filter(
-      (repo) =>
-        repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        repo.fullName.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredRepos(filtered);
-  }, [searchQuery, repositories]);
+  const filteredRepos = useMemo(
+    () =>
+      repositories.filter(
+        (repo) =>
+          repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          repo.fullName.toLowerCase().includes(searchQuery.toLowerCase())
+      ),
+    [searchQuery, repositories]
+  );
 
   const currentRepo = repositories.find((r) => r.fullName === selectedRepo);
 

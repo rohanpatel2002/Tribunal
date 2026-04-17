@@ -1,11 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Search,
-  Bell,
-  ShieldAlert,
-  BarChart3,
   Settings,
   GitPullRequest,
   Activity,
@@ -13,18 +9,11 @@ import {
   Fingerprint,
   RefreshCcw,
   Lock,
-  Box,
-  CheckCircle2,
-  ChevronDown,
-  CheckCircle,
-  Calendar,
-  Filter,
   AlertCircle,
-  Loader2,
   Zap,
   Shield,
   Download,
-  Clock,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   BarChart,
@@ -69,33 +58,43 @@ const TABS = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+interface RepositoryOption {
+  id: string;
+  name: string;
+  fullName: string;
+  url: string;
+  isMonitored: boolean;
+}
+
+type ChartDataPoint = {
+  name: string;
+  Files: number;
+  AI: number;
+  Risks: number;
+};
+
 function DashboardContent() {
   const [data, setData] = useState<AuditSummary | null>(null);
   const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [repo, setRepo] = useState('rohanpatel2002/tribunal');
-  const [apiKey, setApiKey] = useState('dev_enterprise_key_123');
+  const apiKey = 'dev_enterprise_key_123';
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
   // ============= PHASE 2: FILTERING =============
   const [filters, setFilters] = useState<FilterParams>({});
-  const [showFilters, setShowFilters] = useState(false);
 
   // ============= PHASE 2: PAGINATION =============
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const pageSize = 10;
   const itemsPerPage = pageSize;
 
   // ============= PHASE 3: DATE RANGE FILTERING =============
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
-  const [dateFilter, setDateFilter] = useState<{ startDate: Date | null; endDate: Date | null }>({
-    startDate: null,
-    endDate: null,
-  });
 
   // ============= PHASE 3: REPOSITORY SELECTION =============
-  const [repositories, setRepositories] = useState<any[]>([
+  const [repositories] = useState<RepositoryOption[]>([
     { id: '1', name: 'tribunal', fullName: 'rohanpatel2002/tribunal', url: 'https://github.com/rohanpatel2002/tribunal', isMonitored: true },
     { id: '2', name: 'another-repo', fullName: 'rohanpatel2002/another-repo', url: 'https://github.com/rohanpatel2002/another-repo', isMonitored: true },
   ]);
@@ -103,7 +102,7 @@ function DashboardContent() {
   // ============= PHASE 3: EXPORT STATE =============
   const [showExportMenu, setShowExportMenu] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setIsRefreshing(true);
 
@@ -142,11 +141,11 @@ function DashboardContent() {
       setLoading(false);
       setTimeout(() => setIsRefreshing(false), 500);
     }
-  };
+  }, [repo, apiKey, currentPage, itemsPerPage, filters]);
 
   useEffect(() => {
     fetchData();
-  }, [repo, currentPage, pageSize, filters]);
+  }, [fetchData]);
 
   // ============= CHART DATA =============
   const chartData = useMemo(() => {
@@ -163,36 +162,21 @@ function DashboardContent() {
 
   // ============= PAGINATION HELPERS =============
   const totalPages = Math.ceil((logs.length > 0 ? logs.length * 3 : 0) / itemsPerPage) || 1;
-  const canPreviousPage = currentPage > 1;
-  const canNextPage = currentPage < totalPages;
-
-  const handleApplySeverityFilter = (severity: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      severity: severity as any,
-    }));
-    setCurrentPage(1);
-  };
-
-  const handleClearFilters = () => {
-    setFilters({});
-    setCurrentPage(1);
-  };
+  void totalPages;
 
   // ============= PHASE 3: DATE RANGE HANDLERS =============
-  const handleApplyDateFilter = (startDate: Date | null, endDate: Date | null) => {
-    setDateFilter({ startDate, endDate });
+  const handleApplyDateFilter = () => {
     setCurrentPage(1);
     setDateRangeOpen(false);
   };
 
   const handleClearDateFilter = () => {
-    setDateFilter({ startDate: null, endDate: null });
+    setFilters({});
     setCurrentPage(1);
   };
 
   // ============= PHASE 3: REPOSITORY HANDLER =============
-  const handleSelectRepository = (name: string, fullName: string) => {
+  const handleSelectRepository = (_name: string, fullName: string) => {
     setRepo(fullName);
     setCurrentPage(1);
   };
@@ -376,9 +360,9 @@ function DashboardContent() {
             ) : (
               <>
                  {activeTab === 'overview' && <RiskCommandView data={data} logs={logs} chartData={chartData} />}
-                 {activeTab === 'risks' && <VulnerabilitiesView data={data} logs={logs} />}
-                 {activeTab === 'repos' && <RepositoriesView data={data} repo={repo} />}
-                 {activeTab === 'settings' && <PoliciesView />}
+                 {activeTab === 'analysis' && <VulnerabilitiesView data={data} logs={logs} />}
+                 {activeTab === 'policies' && <PoliciesView />}
+                 {activeTab === 'settings' && <RepositoriesView data={data} repo={repo} />}
               </>
             )}
          </div>
@@ -387,7 +371,15 @@ function DashboardContent() {
   );
 }
 
-function RiskCommandView({ data, logs, chartData }: any) {
+function RiskCommandView({
+  data,
+  logs,
+  chartData,
+}: {
+  data: AuditSummary | null;
+  logs: PRAnalysisRecord[];
+  chartData: ChartDataPoint[];
+}) {
   return (
     <div className="animate-in fade-in duration-500">
       <div className="mb-8">
@@ -451,8 +443,8 @@ function RiskCommandView({ data, logs, chartData }: any) {
   );
 }
 
-function VulnerabilitiesView({ data, logs }: any) {
-  const riskyLogs = logs.filter((l: any) => l.critical > 0 || l.high > 0);
+function VulnerabilitiesView({ data, logs }: { data: AuditSummary | null; logs: PRAnalysisRecord[] }) {
+  const riskyLogs = logs.filter((l) => l.critical > 0 || l.high > 0);
   
   return (
     <div className="animate-in fade-in duration-500">
@@ -486,7 +478,7 @@ function VulnerabilitiesView({ data, logs }: any) {
              <tbody className="divide-y divide-[#1F1F22]">
                {riskyLogs.length === 0 ? (
                  <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No active vulnerabilities found. You are secure.</td></tr>
-               ) : riskyLogs.map((log: any, index: number) => (
+               ) : riskyLogs.map((log, index: number) => (
                  <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
                    <td className="px-6 py-4"><span className="font-mono text-slate-300">#{log.prNumber}</span></td>
                    <td className="px-6 py-4">
@@ -509,7 +501,7 @@ function VulnerabilitiesView({ data, logs }: any) {
   );
 }
 
-function RepositoriesView({ data, repo }: any) {
+function RepositoriesView({ data, repo }: { data: AuditSummary | null; repo: string }) {
   return (
     <div className="animate-in fade-in duration-500">
       <div className="mb-8">
@@ -619,7 +611,7 @@ function PoliciesView() {
   );
 }
 
-function LogTable({ logs, title }: any) {
+function LogTable({ logs, title }: { logs: PRAnalysisRecord[]; title: string }) {
   return (
     <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl overflow-hidden mt-2">
        <div className="px-6 py-4 border-b border-[#1F1F22] flex justify-between items-center">
@@ -640,7 +632,7 @@ function LogTable({ logs, title }: any) {
            <tbody className="divide-y divide-[#1F1F22]">
              {logs.length === 0 ? (
                <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No recent payload intercepted.</td></tr>
-             ) : logs.map((log: any, index: number) => (
+             ) : logs.map((log, index: number) => (
                <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
                  <td className="px-6 py-3.5">
                    <div className="flex items-center gap-2">
@@ -681,7 +673,19 @@ function LogTable({ logs, title }: any) {
   )
 }
 
-function MetricCard({ title, value, icon: Icon, color, bg }: any) {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+  color,
+  bg,
+}: {
+  title: string;
+  value: string | number;
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+}) {
   return (
     <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl p-5 flex flex-col justify-between">
       <div className="flex justify-between items-start">
