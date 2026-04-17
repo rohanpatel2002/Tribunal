@@ -2,54 +2,69 @@
 
 import { useEffect, useState } from "react";
 import { Activity, ShieldAlert, FileText, CheckCircle, TrendingUp, AlertTriangle } from "lucide-react";
-
-interface AnalyticsSummary {
-  totalPRs: number;
-  aiGeneratedPRs: number;
-  criticalRisks: number;
-  averageAIScore: number;
-}
-
-interface AnalyticsLog {
-  id: string;
-  prNumber: number;
-  recommendation: string;
-  totalFiles: number;
-  aiGenerated: number;
-  critical: number;
-  high: number;
-}
+import {
+  fetchAuditSummary,
+  fetchAuditLogs,
+  getDemoAuditSummary,
+  getDemoPRAnalysisRecords,
+  type AuditSummary,
+  type PRAnalysisRecord,
+} from "@/lib/api";
 
 export default function AnalyticsDashboard() {
-  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
-  const [logs, setLogs] = useState<AnalyticsLog[]>([]);
+  const [summary, setSummary] = useState<AuditSummary | null>(null);
+  const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usingDemo, setUsingDemo] = useState(false);
 
-  // In a real app we might pick the repo from a dropdown
   const REPOSITORY = "rohanpatel2002/tribunal";
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? "dev_enterprise_key_123";
 
   useEffect(() => {
+    let isActive = true;
+
     async function fetchAnalytics() {
+      setLoading(true);
+      setUsingDemo(false);
+
       try {
         const [summaryRes, logsRes] = await Promise.all([
-          fetch(`http://localhost:8080/api/v1/audit/summary?repository=${REPOSITORY}`),
-          fetch(`http://localhost:8080/api/v1/audit/logs?repository=${REPOSITORY}&limit=10`)
+          fetchAuditSummary(REPOSITORY, apiKey),
+          fetchAuditLogs(REPOSITORY, apiKey, { limit: 10 }),
         ]);
-        
-        if (summaryRes.ok) setSummary(await summaryRes.json());
-        if (logsRes.ok) {
-          const logsData = await logsRes.json();
-          setLogs(logsData.data || []);
+
+        if (!isActive) return;
+
+        if (summaryRes) {
+          setSummary(summaryRes);
+        } else {
+          setSummary(getDemoAuditSummary(REPOSITORY));
+          setUsingDemo(true);
+        }
+
+        if (logsRes) {
+          setLogs(logsRes);
+        } else {
+          setLogs(getDemoPRAnalysisRecords(REPOSITORY));
+          setUsingDemo(true);
         }
       } catch (err) {
         console.error("Failed to fetch analytics:", err);
+        if (!isActive) return;
+        setSummary(getDemoAuditSummary(REPOSITORY));
+        setLogs(getDemoPRAnalysisRecords(REPOSITORY));
+        setUsingDemo(true);
       } finally {
-        setLoading(false);
+        if (isActive) setLoading(false);
       }
     }
-    
+
     fetchAnalytics();
-  }, []);
+
+    return () => {
+      isActive = false;
+    };
+  }, [apiKey]);
 
   if (loading) {
     return (
@@ -64,15 +79,22 @@ export default function AnalyticsDashboard() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        <header className="flex justify-between items-end">
+        <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Enterprise Analytics</h1>
             <p className="text-zinc-400">Security overview for <span className="text-emerald-400 font-mono">{REPOSITORY}</span></p>
           </div>
-          <button className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center">
-            <CheckCircle className="h-4 w-4 mr-2 text-emerald-500" />
-            System Healthy
-          </button>
+          <div className="flex items-center gap-3">
+            {usingDemo && (
+              <span className="text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                Demo data
+              </span>
+            )}
+            <button className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center">
+              <CheckCircle className="h-4 w-4 mr-2 text-emerald-500" />
+              System Healthy
+            </button>
+          </div>
         </header>
 
         {/* KPI Cards */}
