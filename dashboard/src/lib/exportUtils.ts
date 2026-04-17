@@ -114,10 +114,10 @@ export function generateHTMLReport(
   logs: PRAnalysisRecord[],
   summary?: { totalPRs?: number; criticalRisks?: number; highRisks?: number; aiGeneratedPRs?: number }
 ): string {
-  const totalRecords = logs.length;
-  const criticalCount = logs.reduce((sum, log) => sum + log.critical, 0);
-  const highCount = logs.reduce((sum, log) => sum + log.high, 0);
-  const aiGeneratedCount = logs.filter((log) => log.aiGenerated > 0).length;
+  const totalRecords = summary?.totalPRs ?? logs.length;
+  const criticalCount = summary?.criticalRisks ?? logs.reduce((sum, log) => sum + log.critical, 0);
+  const highCount = summary?.highRisks ?? logs.reduce((sum, log) => sum + log.high, 0);
+  const aiGeneratedCount = summary?.aiGeneratedPRs ?? logs.filter((log) => log.aiGenerated > 0).length;
 
   const html = `
     <!DOCTYPE html>

@@ -3,9 +3,26 @@
 import { useEffect, useState } from "react";
 import { Activity, ShieldAlert, FileText, CheckCircle, TrendingUp, AlertTriangle } from "lucide-react";
 
+interface AnalyticsSummary {
+  totalPRs: number;
+  aiGeneratedPRs: number;
+  criticalRisks: number;
+  averageAIScore: number;
+}
+
+interface AnalyticsLog {
+  id: string;
+  prNumber: number;
+  recommendation: string;
+  totalFiles: number;
+  aiGenerated: number;
+  critical: number;
+  high: number;
+}
+
 export default function AnalyticsDashboard() {
-  const [summary, setSummary] = useState<any>(null);
-  const [logs, setLogs] = useState<any[]>([]);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [logs, setLogs] = useState<AnalyticsLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   // In a real app we might pick the repo from a dropdown
