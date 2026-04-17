@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   turbopack: {
-    root: process.cwd(),
+    root: __dirname,
   },
+  output: "standalone",
   typescript: {
     ignoreBuildErrors: true,
   }
