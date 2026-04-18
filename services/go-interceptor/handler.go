@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -66,9 +67,14 @@ func NewHandler(repo Repository, gh GitHubIntegrator, llm LLMIntegrator) *Handle
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":  "ok",
-		"service": "go-interceptor",
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":     "ok",
+		"service":    "go-interceptor",
+		"goroutines": runtime.NumGoroutine(),
+		"memory_mb":  m.Sys / 1024 / 1024,
 	})
 }
 
