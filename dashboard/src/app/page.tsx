@@ -81,6 +81,7 @@ function DashboardContent() {
   const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? 'dev_enterprise_key_123';
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [usingDemo, setUsingDemo] = useState(false);
 
   // ============= PHASE 2: FILTERING =============
   const [filters, setFilters] = useState<FilterParams>({});
@@ -105,6 +106,7 @@ function DashboardContent() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setIsRefreshing(true);
+    setUsingDemo(false);
 
     try {
       // Fetch summary
@@ -115,6 +117,7 @@ function DashboardContent() {
         // Use demo data as fallback
         console.info('Using demo data (API unavailable)');
         setData(getDemoAuditSummary(repo));
+        setUsingDemo(true);
       }
 
       // Fetch logs with pagination
@@ -131,12 +134,14 @@ function DashboardContent() {
       } else {
         // Use demo data as fallback
         setLogs(getDemoPRAnalysisRecords(repo));
+        setUsingDemo(true);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
       // Gracefully fall back to demo data
       setData(getDemoAuditSummary(repo));
       setLogs(getDemoPRAnalysisRecords(repo));
+      setUsingDemo(true);
     } finally {
       setLoading(false);
       setTimeout(() => setIsRefreshing(false), 500);
@@ -292,6 +297,11 @@ function DashboardContent() {
                     repositories={repositories}
                   />
                </div>
+              {usingDemo && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                  Demo data
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 ml-auto">
