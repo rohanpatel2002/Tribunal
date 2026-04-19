@@ -13,7 +13,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Automatically initialize tables when the container boots for the first time
       - ./schema/postgres.sql:/docker-entrypoint-initdb.d/01_init.sql
       - ./schema/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
     healthcheck:
@@ -22,7 +21,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # The Go Webhook Analysis Service
   interceptor:
     build:
       context: .
@@ -32,18 +30,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Inject the connection string to allow the Go app to find the sibling PostgreSQL container
-      - DATABASE_URL=postgres://${POSTGRES_USER:-tribunal}:${POSTGRES_PASSWORD:-tribunal_password_dev}@db:5432/tribunal_db?sslmode=disable
-      - PORT=8080
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - TRIBUNAL_API_KEY=${TRIBUNAL_API_KEY:?Error: TRIBUNAL_API_KEY not set}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tribunal}:${POSTGRES_PASSWORD:-tribunal_password_dev}@db:5432/tribunal_db?sslmode=disable
+      PORT: "8080"
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TRIBUNAL_API_KEY: ${TRIBUNAL_API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
 
-  # React Enterprise Dashboard
   dashboard:
     build:
       context: ./dashboard
@@ -53,7 +49,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 10s
@@ -63,5 +59,4 @@ services:
       - interceptor
 
 volumes:
-  # Persistent volume so AI analysis data isn't deleted if the container stops
   postgres_data:
