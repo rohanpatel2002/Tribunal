@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -56,14 +57,22 @@ type BitbucketWebhookPayload struct {
 
 // Handler holds the application's external dependencies (like the database).
 type Handler struct {
-	repo         Repository
-	githubClient GitHubIntegrator
-	llmClient    LLMIntegrator
+	repo             Repository
+	githubClient     GitHubIntegrator
+	llmClient        LLMIntegrator
+	contextFetcher   *ContextFetcher
+	briefingGen      *EnhancedBriefingGenerator
 }
 
 // NewHandler creates a new HTTP handler with the given repository and GitHub client.
 func NewHandler(repo Repository, gh GitHubIntegrator, llm LLMIntegrator) *Handler {
-	return &Handler{repo: repo, githubClient: gh, llmClient: llm}
+	return &Handler{
+		repo:             repo,
+		githubClient:     gh,
+		llmClient:        llm,
+		contextFetcher:   NewContextFetcher(os.Getenv("GITHUB_TOKEN")),
+		briefingGen:      NewEnhancedBriefingGenerator(),
+	}
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -312,6 +321,7 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Initialize Check Run if we have a GitHub Client + a Commit SHA
 	var checkRunID int64
 	repoContext := ""
+	var repositoryCtx *RepositoryContext
 
 	// SaaS Logic: Only allow God-Mode context fetch for non-FREE tiers
 	if h.githubClient != nil && payload.PullRequest.Head.Sha != "" {
@@ -334,6 +344,17 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// NEW: Fetch repository context for briefing generation
+	if h.contextFetcher != nil {
+		ctx, err := h.contextFetcher.FetchRepositoryContext(r.Context(), payload.Repository.FullName)
+		if err != nil {
+			slog.Warn("failed to fetch repository context for briefing", "repo", payload.Repository.FullName, "error", err)
+		} else {
+			repositoryCtx = ctx
+			slog.Info("repository context fetched successfully", "repo", payload.Repository.FullName, "relevance", ctx.ContextRelevanceScore)
+		}
+	}
+
 	// Prevent Anthropic LLM API calls completely on the FREE tier
 	activeLLM := h.llmClient
 	if tier == "FREE" {
@@ -343,6 +364,13 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	// 3. Analyze the patches with LLM (or fallback heuristic if FREE/nil), passing along the context
 	resp := BuildResponse(r.Context(), req, activeLLM, repoContext)
 
+	// NEW: Add context and generate enhanced briefing
+	resp.RepositoryContext = repositoryCtx
+	if h.briefingGen != nil {
+		resp.ContextBriefing = h.briefingGen.GenerateEnhancedBriefing(&resp, repositoryCtx)
+		slog.Info("context briefing generated", "repo", payload.Repository.FullName, "pr", payload.PullRequest.Number, "length", len(resp.ContextBriefing))
+	}
+
 	// 4. Persist to database
 	if h.repo != nil {
 		if err := h.repo.SaveAnalysis(r.Context(), &resp); err != nil {
@@ -350,9 +378,15 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update Check Run with Final Markdown
+	// Update Check Run with Final Markdown (use new enhanced briefing)
 	if h.githubClient != nil && checkRunID > 0 {
-		markdownBody := GenerateContextBriefing(&resp)
+		var markdownBody string
+		if resp.ContextBriefing != "" {
+			markdownBody = resp.ContextBriefing
+		} else {
+			// Fallback to old briefing if enhanced generation failed
+			markdownBody = GenerateContextBriefing(&resp)
+		}
 
 		conclusion := "success"
 		if resp.Recommendation == "BLOCK" {
@@ -521,6 +555,19 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 	// For manual test runs without webhook context
 	repoContext := ""
 	resp := BuildResponse(r.Context(), req, h.llmClient, repoContext)
+
+	// NEW: Fetch context and generate enhanced briefing for /analyze endpoint
+	if h.contextFetcher != nil {
+		ctx, err := h.contextFetcher.FetchRepositoryContext(r.Context(), req.Repository)
+		if err != nil {
+			slog.Warn("failed to fetch context for /analyze", "repo", req.Repository, "error", err)
+		} else {
+			resp.RepositoryContext = ctx
+			if h.briefingGen != nil {
+				resp.ContextBriefing = h.briefingGen.GenerateEnhancedBriefing(&resp, ctx)
+			}
+		}
+	}
 
 	// Enforce security policies against the analysis result
 	if h.repo != nil {

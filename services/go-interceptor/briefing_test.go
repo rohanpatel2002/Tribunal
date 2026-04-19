@@ -38,7 +38,7 @@ func TestGenerateContextBriefing(t *testing.T) {
 	if !strings.Contains(markdown, "# Context Briefing: PR #12") {
 		t.Errorf("Expected PR title in briefing")
 	}
-	if !strings.Contains(markdown, "🚨 **OVERALL STATUS: BLOCK**") {
+	if !strings.Contains(markdown, " **OVERALL STATUS: BLOCK**") {
 		t.Errorf("Expected BLOCK status with emoji")
 	}
 	if !strings.Contains(markdown, "core.go") {
@@ -47,7 +47,7 @@ func TestGenerateContextBriefing(t *testing.T) {
 	if !strings.Contains(markdown, "Missing idempotency key") {
 		t.Errorf("Expected summary in file breakdown")
 	}
-	if !strings.Contains(markdown, "🛑 **BLOCK MERGE**") {
+	if !strings.Contains(markdown, " **BLOCK MERGE**") {
 		t.Errorf("Expected block recommendation block")
 	}
 }

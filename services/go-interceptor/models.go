@@ -53,6 +53,8 @@ type AnalyzeResponse struct {
 	Medium         int            `json:"medium"`
 	Low            int            `json:"low"`
 	Files          []FileAnalysis `json:"files,omitempty"`
+	ContextBriefing string        `json:"contextBriefing,omitempty"`
+	RepositoryContext *RepositoryContext `json:"repositoryContext,omitempty"`
 	CreatedAt      time.Time      `json:"createdAt,omitempty"`
 }
 
