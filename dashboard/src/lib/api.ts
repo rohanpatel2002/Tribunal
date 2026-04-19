@@ -53,6 +53,11 @@ export interface PRAnalysisRecord {
   medium: number;
   low: number;
   createdAt?: string;
+  contextBriefing?: string;
+  repositoryContext?: {
+    serviceDepenencies: Array<{ serviceName: string; dependency: string; type: string }>;
+    incidents: Array<{ title: string; severity: string; description: string }>;
+  };
 }
 
 export interface SecurityPolicy {

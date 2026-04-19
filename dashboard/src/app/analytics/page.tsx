@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Activity, ShieldAlert, FileText, CheckCircle, TrendingUp, AlertTriangle } from "lucide-react";
+import { BriefingDetail } from "@/components/BriefingDetail";
 import {
   fetchAuditSummary,
   fetchAuditLogs,
@@ -166,21 +167,35 @@ export default function AnalyticsDashboard() {
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
                   {logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-zinc-800/20 transition-colors">
-                      <td className="px-6 py-4 font-medium text-emerald-400">#{" "}{log.prNumber}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                          ${log.recommendation === 'APPROVE' ? 'bg-emerald-500/10 text-emerald-400' : 
-                            log.recommendation === 'BLOCK' ? 'bg-red-500/10 text-red-400' : 
-                            'bg-amber-500/10 text-amber-400'}`}>
-                          {log.recommendation}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-zinc-300">{log.totalFiles}</td>
-                      <td className="px-6 py-4 text-zinc-300">{log.aiGenerated}</td>
-                      <td className="px-6 py-4 font-medium text-red-500">{log.critical}</td>
-                      <td className="px-6 py-4 font-medium text-amber-500">{log.high}</td>
-                    </tr>
+                    <React.Fragment key={log.id}>
+                      <tr className="hover:bg-zinc-800/20 transition-colors">
+                        <td className="px-6 py-4 font-medium text-emerald-400">#{" "}{log.prNumber}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                            ${log.recommendation === 'APPROVE' ? 'bg-emerald-500/10 text-emerald-400' : 
+                              log.recommendation === 'BLOCK' ? 'bg-red-500/10 text-red-400' : 
+                              'bg-amber-500/10 text-amber-400'}`}>
+                            {log.recommendation}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-zinc-300">{log.totalFiles}</td>
+                        <td className="px-6 py-4 text-zinc-300">{log.aiGenerated}</td>
+                        <td className="px-6 py-4 font-medium text-red-500">{log.critical}</td>
+                        <td className="px-6 py-4 font-medium text-amber-500">{log.high}</td>
+                      </tr>
+                      {log.contextBriefing && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-2 bg-zinc-950">
+                            <BriefingDetail 
+                              briefing={log.contextBriefing}
+                              prNumber={log.prNumber}
+                              recommendation={log.recommendation}
+                              createdAt={log.createdAt}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
