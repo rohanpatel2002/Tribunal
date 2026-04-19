@@ -48,6 +48,22 @@ logs/
 *.out
 
 # Temporary
+temp/
+tmp/
+
+# Documentation (local drafts only, don't commit)
+docs/**/*.md
+!docs/Architecture.md
+!docs/ENTERPRISE_VISION.md
+!docs/AI_Detection.md
+!docs/Integration.md
+!docs/Context\ Briefing\ System.md
+!docs/MVP_EXECUTION_PLAN.md
+
+# Do not commit generated docs
+*.generated.md
+IMPLEMENTATION_STATUS.md
+PROJECT_COMPLETION.md
 tmp/
 temp/
 .tmp/
