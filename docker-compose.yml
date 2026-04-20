@@ -13,7 +13,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Automatically initialize tables when the container boots for the first time
       - ./schema/postgres.sql:/docker-entrypoint-initdb.d/01_init.sql
       - ./schema/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
     healthcheck:
@@ -22,7 +21,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # The Go Webhook Analysis Service
   interceptor:
     build:
       context: .
@@ -30,30 +28,51 @@ services:
     container_name: tribunal_interceptor
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8000:8000"
     environment:
-      # Inject the connection string to allow the Go app to find the sibling PostgreSQL container
-      - DATABASE_URL=postgres://${POSTGRES_USER:-tribunal}:${POSTGRES_PASSWORD:-tribunal_password_dev}@db:5432/tribunal_db?sslmode=disable
-      - PORT=8080
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - TRIBUNAL_API_KEY=${TRIBUNAL_API_KEY:?Error: TRIBUNAL_API_KEY not set}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tribunal}:${POSTGRES_PASSWORD:-tribunal_password_dev}@db:5432/tribunal_db?sslmode=disable
+      PORT: "8000"
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TRIBUNAL_API_KEY: ${TRIBUNAL_API_KEY}
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      GITHUB_OAUTH_REDIRECT_URL: ${GITHUB_OAUTH_REDIRECT_URL:-}
+      GITHUB_OAUTH_SUCCESS_REDIRECT: ${GITHUB_OAUTH_SUCCESS_REDIRECT:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  # React Enterprise Dashboard
+  redis:
+    image: redis:7-alpine
+    container_name: tribunal_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-dev_enterprise_key_123}
     container_name: tribunal_dashboard
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-dev_enterprise_key_123}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
       interval: 10s
@@ -62,6 +81,41 @@ services:
     depends_on:
       - interceptor
 
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: tribunal_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml
+    depends_on:
+      - interceptor
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: tribunal_alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+
+  grafana:
+    image: grafana/grafana-oss:10.4.3
+    container_name: tribunal_grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
 volumes:
-  # Persistent volume so AI analysis data isn't deleted if the container stops
   postgres_data:

@@ -1,38 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Activity, ShieldAlert, FileText, CheckCircle, TrendingUp, AlertTriangle } from "lucide-react";
+import { BriefingDetail } from "@/components/BriefingDetail";
+import {
+  fetchAuditSummary,
+  fetchAuditLogs,
+  getDemoAuditSummary,
+  getDemoPRAnalysisRecords,
+  type AuditSummary,
+  type PRAnalysisRecord,
+} from "@/lib/api";
 
 export default function AnalyticsDashboard() {
-  const [summary, setSummary] = useState<any>(null);
-  const [logs, setLogs] = useState<any[]>([]);
+  const [summary, setSummary] = useState<AuditSummary | null>(null);
+  const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usingDemo, setUsingDemo] = useState(false);
 
-  // In a real app we might pick the repo from a dropdown
   const REPOSITORY = "rohanpatel2002/tribunal";
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? "dev_enterprise_key_123";
 
   useEffect(() => {
+    let isActive = true;
+
     async function fetchAnalytics() {
+      setLoading(true);
+      setUsingDemo(false);
+
       try {
         const [summaryRes, logsRes] = await Promise.all([
-          fetch(`http://localhost:8080/api/v1/audit/summary?repository=${REPOSITORY}`),
-          fetch(`http://localhost:8080/api/v1/audit/logs?repository=${REPOSITORY}&limit=10`)
+          fetchAuditSummary(REPOSITORY, apiKey),
+          fetchAuditLogs(REPOSITORY, apiKey, { limit: 10 }),
         ]);
-        
-        if (summaryRes.ok) setSummary(await summaryRes.json());
-        if (logsRes.ok) {
-          const logsData = await logsRes.json();
-          setLogs(logsData.data || []);
+
+        if (!isActive) return;
+
+        if (summaryRes) {
+          setSummary(summaryRes);
+        } else {
+          setSummary(getDemoAuditSummary(REPOSITORY));
+          setUsingDemo(true);
+        }
+
+        if (logsRes) {
+          setLogs(logsRes);
+        } else {
+          setLogs(getDemoPRAnalysisRecords(REPOSITORY));
+          setUsingDemo(true);
         }
       } catch (err) {
         console.error("Failed to fetch analytics:", err);
+        if (!isActive) return;
+        setSummary(getDemoAuditSummary(REPOSITORY));
+        setLogs(getDemoPRAnalysisRecords(REPOSITORY));
+        setUsingDemo(true);
       } finally {
-        setLoading(false);
+        if (isActive) setLoading(false);
       }
     }
-    
+
     fetchAnalytics();
-  }, []);
+
+    return () => {
+      isActive = false;
+    };
+  }, [apiKey]);
 
   if (loading) {
     return (
@@ -47,15 +80,22 @@ export default function AnalyticsDashboard() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        <header className="flex justify-between items-end">
+        <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Enterprise Analytics</h1>
             <p className="text-zinc-400">Security overview for <span className="text-emerald-400 font-mono">{REPOSITORY}</span></p>
           </div>
-          <button className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center">
-            <CheckCircle className="h-4 w-4 mr-2 text-emerald-500" />
-            System Healthy
-          </button>
+          <div className="flex items-center gap-3">
+            {usingDemo && (
+              <span className="text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                Demo data
+              </span>
+            )}
+            <button className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center">
+              <CheckCircle className="h-4 w-4 mr-2 text-emerald-500" />
+              System Healthy
+            </button>
+          </div>
         </header>
 
         {/* KPI Cards */}
@@ -127,21 +167,35 @@ export default function AnalyticsDashboard() {
                 </thead>
                 <tbody className="divide-y divide-zinc-800">
                   {logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-zinc-800/20 transition-colors">
-                      <td className="px-6 py-4 font-medium text-emerald-400">#{" "}{log.prNumber}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                          ${log.recommendation === 'APPROVE' ? 'bg-emerald-500/10 text-emerald-400' : 
-                            log.recommendation === 'BLOCK' ? 'bg-red-500/10 text-red-400' : 
-                            'bg-amber-500/10 text-amber-400'}`}>
-                          {log.recommendation}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-zinc-300">{log.totalFiles}</td>
-                      <td className="px-6 py-4 text-zinc-300">{log.aiGenerated}</td>
-                      <td className="px-6 py-4 font-medium text-red-500">{log.critical}</td>
-                      <td className="px-6 py-4 font-medium text-amber-500">{log.high}</td>
-                    </tr>
+                    <React.Fragment key={log.id}>
+                      <tr className="hover:bg-zinc-800/20 transition-colors">
+                        <td className="px-6 py-4 font-medium text-emerald-400">#{" "}{log.prNumber}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                            ${log.recommendation === 'APPROVE' ? 'bg-emerald-500/10 text-emerald-400' : 
+                              log.recommendation === 'BLOCK' ? 'bg-red-500/10 text-red-400' : 
+                              'bg-amber-500/10 text-amber-400'}`}>
+                            {log.recommendation}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-zinc-300">{log.totalFiles}</td>
+                        <td className="px-6 py-4 text-zinc-300">{log.aiGenerated}</td>
+                        <td className="px-6 py-4 font-medium text-red-500">{log.critical}</td>
+                        <td className="px-6 py-4 font-medium text-amber-500">{log.high}</td>
+                      </tr>
+                      {log.contextBriefing && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-2 bg-zinc-950">
+                            <BriefingDetail 
+                              briefing={log.contextBriefing}
+                              prNumber={log.prNumber}
+                              recommendation={log.recommendation}
+                              createdAt={log.createdAt}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

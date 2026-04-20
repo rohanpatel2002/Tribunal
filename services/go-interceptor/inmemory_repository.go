@@ -183,16 +183,19 @@ func (r *InMemoryRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 		}
 		a := list[i]
 		records = append(records, PRAnalysisRecord{
-			ID:             fmt.Sprintf("repo-%s-pr-%d", a.Repository, a.PRNumber),
-			Repository:     a.Repository,
-			PRNumber:       a.PRNumber,
-			Recommendation: a.Recommendation,
-			TotalFiles:     a.TotalFiles,
-			AIGenerated:    a.AIGenerated,
-			Critical:       a.Critical,
-			High:           a.High,
-			Medium:         a.Medium,
-			Low:            a.Low,
+			ID:                fmt.Sprintf("repo-%s-pr-%d", a.Repository, a.PRNumber),
+			Repository:        a.Repository,
+			PRNumber:          a.PRNumber,
+			Recommendation:    a.Recommendation,
+			TotalFiles:        a.TotalFiles,
+			AIGenerated:       a.AIGenerated,
+			Critical:          a.Critical,
+			High:              a.High,
+			Medium:            a.Medium,
+			Low:               a.Low,
+			CreatedAt:         a.CreatedAt,
+			ContextBriefing:   a.ContextBriefing,
+			RepositoryContext: a.RepositoryContext,
 		})
 	}
 

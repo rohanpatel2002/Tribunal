@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS pr_analyses (
     high INT NOT NULL,
     medium INT NOT NULL,
     low INT NOT NULL,
+    context_briefing TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -41,6 +42,26 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
     delivery_id VARCHAR(255) PRIMARY KEY,
     repository VARCHAR(255) NOT NULL,
     processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS github_oauth_states (
+    state TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_github_oauth_states_expires_at
+    ON github_oauth_states(expires_at);
+
+CREATE TABLE IF NOT EXISTS github_connections (
+    session_id TEXT PRIMARY KEY,
+    login TEXT NOT NULL,
+    name TEXT,
+    avatar_url TEXT,
+    repos JSONB NOT NULL,
+    connected_at TIMESTAMPTZ NOT NULL,
+    access_token TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ENTERPRISE SAAS SCHEMA: Multi-Tenant Organizations and Subscriptions

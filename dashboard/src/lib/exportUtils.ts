@@ -37,8 +37,8 @@ export function exportToCSV(logs: PRAnalysisRecord[], filename: string = 'audit-
 
   // Build CSV string
   const csv = [
-    headers.join(','),
-    ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
+    headers.map((cell) => formatSpreadsheetCell(cell, ',')).join(','),
+    ...rows.map((row) => row.map((cell) => formatSpreadsheetCell(cell, ',')).join(',')),
   ].join('\n');
 
   // Create blob and download
@@ -102,7 +102,10 @@ export function exportToTSV(logs: PRAnalysisRecord[], filename: string = 'audit-
   ]);
 
   // Build TSV string
-  const tsv = [headers.join('\t'), ...rows.map((row) => row.join('\t'))].join('\n');
+  const tsv = [
+    headers.map((cell) => formatSpreadsheetCell(cell, '\t')).join('\t'),
+    ...rows.map((row) => row.map((cell) => formatSpreadsheetCell(cell, '\t')).join('\t')),
+  ].join('\n');
 
   downloadFile(tsv, filename, 'text/tab-separated-values;charset=utf-8;');
 }
@@ -114,10 +117,10 @@ export function generateHTMLReport(
   logs: PRAnalysisRecord[],
   summary?: { totalPRs?: number; criticalRisks?: number; highRisks?: number; aiGeneratedPRs?: number }
 ): string {
-  const totalRecords = logs.length;
-  const criticalCount = logs.reduce((sum, log) => sum + log.critical, 0);
-  const highCount = logs.reduce((sum, log) => sum + log.high, 0);
-  const aiGeneratedCount = logs.filter((log) => log.aiGenerated > 0).length;
+  const totalRecords = summary?.totalPRs ?? logs.length;
+  const criticalCount = summary?.criticalRisks ?? logs.reduce((sum, log) => sum + log.critical, 0);
+  const highCount = summary?.highRisks ?? logs.reduce((sum, log) => sum + log.high, 0);
+  const aiGeneratedCount = summary?.aiGeneratedPRs ?? logs.filter((log) => log.aiGenerated > 0).length;
 
   const html = `
     <!DOCTYPE html>
@@ -222,7 +225,7 @@ function downloadFile(content: string, filename: string, mimeType: string): void
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = filename;
+  link.download = sanitizeFilename(filename);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -236,6 +239,26 @@ export function getTimestampedFilename(baseFilename: string): string {
   const timestamp = new Date()
     .toISOString()
     .split('T')[0]; // YYYY-MM-DD
-  const [name, ext] = baseFilename.split('.');
-  return `${name}-${timestamp}.${ext}`;
+  const parts = baseFilename.split('.');
+  const ext = parts.length > 1 ? parts.pop() : undefined;
+  const name = parts.join('.') || 'export';
+  return ext ? `${name}-${timestamp}.${ext}` : `${name}-${timestamp}`;
+}
+
+function formatSpreadsheetCell(value: unknown, delimiter: ',' | '\t'): string {
+  const rawValue = value ?? '';
+  let cell = String(rawValue);
+  const trimmed = cell.trimStart();
+  if (/^[=+\-@]/.test(trimmed)) {
+    cell = `'${cell}`;
+  }
+  if (cell.includes('"')) {
+    cell = cell.replace(/"/g, '""');
+  }
+  const needsQuotes = delimiter === ',' ? true : cell.includes('\t') || cell.includes('\n');
+  return needsQuotes ? `"${cell}"` : cell;
+}
+
+function sanitizeFilename(filename: string): string {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 }

@@ -1,11 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Search,
-  Bell,
-  ShieldAlert,
-  BarChart3,
   Settings,
   GitPullRequest,
   Activity,
@@ -13,18 +9,11 @@ import {
   Fingerprint,
   RefreshCcw,
   Lock,
-  Box,
-  CheckCircle2,
-  ChevronDown,
-  CheckCircle,
-  Calendar,
-  Filter,
   AlertCircle,
-  Loader2,
   Zap,
   Shield,
   Download,
-  Clock,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   BarChart,
@@ -44,9 +33,13 @@ import { RepositorySelector } from '@/components/RepositorySelector';
 import {
   fetchAuditSummary,
   fetchAuditLogs,
+  fetchGitHubConnectionStatus,
+  startGitHubConnection,
+  disconnectGitHub,
   getDemoAuditSummary,
   getDemoPRAnalysisRecords,
   type AuditSummary,
+  type GitHubConnectionStatus,
   type PRAnalysisRecord,
   type FilterParams,
 } from '@/lib/api';
@@ -69,43 +62,83 @@ const TABS = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+interface RepositoryOption {
+  id: string;
+  name: string;
+  fullName: string;
+  url: string;
+  isMonitored: boolean;
+}
+
+type ChartDataPoint = {
+  name: string;
+  Files: number;
+  AI: number;
+  Risks: number;
+};
+
 function DashboardContent() {
   const [data, setData] = useState<AuditSummary | null>(null);
   const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [repo, setRepo] = useState('rohanpatel2002/tribunal');
-  const [apiKey, setApiKey] = useState('dev_enterprise_key_123');
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? 'dev_enterprise_key_123';
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [usingDemo, setUsingDemo] = useState(false);
 
   // ============= PHASE 2: FILTERING =============
   const [filters, setFilters] = useState<FilterParams>({});
-  const [showFilters, setShowFilters] = useState(false);
 
   // ============= PHASE 2: PAGINATION =============
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const pageSize = 10;
   const itemsPerPage = pageSize;
 
   // ============= PHASE 3: DATE RANGE FILTERING =============
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
-  const [dateFilter, setDateFilter] = useState<{ startDate: Date | null; endDate: Date | null }>({
-    startDate: null,
-    endDate: null,
-  });
 
   // ============= PHASE 3: REPOSITORY SELECTION =============
-  const [repositories, setRepositories] = useState<any[]>([
+  const [repositories, setRepositories] = useState<RepositoryOption[]>([
     { id: '1', name: 'tribunal', fullName: 'rohanpatel2002/tribunal', url: 'https://github.com/rohanpatel2002/tribunal', isMonitored: true },
     { id: '2', name: 'another-repo', fullName: 'rohanpatel2002/another-repo', url: 'https://github.com/rohanpatel2002/another-repo', isMonitored: true },
   ]);
+  const [githubStatus, setGithubStatus] = useState<GitHubConnectionStatus | null>(null);
 
   // ============= PHASE 3: EXPORT STATE =============
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const hasAnalyses = (data?.totalPRs ?? 0) > 0 || logs.length > 0;
 
-  const fetchData = async () => {
+  const refreshGitHubConnection = useCallback(async () => {
+    const status = await fetchGitHubConnectionStatus(apiKey);
+    if (!status) {
+      return;
+    }
+
+    setGithubStatus(status);
+
+    if (status.connected && status.repos.length > 0) {
+      const mappedRepos: RepositoryOption[] = status.repos.map((connectedRepo) => ({
+        id: String(connectedRepo.id),
+        name: connectedRepo.name,
+        fullName: connectedRepo.fullName,
+        url: connectedRepo.htmlUrl,
+        isMonitored: true,
+      }));
+
+      setRepositories(mappedRepos);
+
+      const repoExists = mappedRepos.some((candidate) => candidate.fullName === repo);
+      if (!repoExists) {
+        setRepo(mappedRepos[0].fullName);
+      }
+    }
+  }, [apiKey, repo]);
+
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setIsRefreshing(true);
+    setUsingDemo(false);
 
     try {
       // Fetch summary
@@ -116,6 +149,7 @@ function DashboardContent() {
         // Use demo data as fallback
         console.info('Using demo data (API unavailable)');
         setData(getDemoAuditSummary(repo));
+        setUsingDemo(true);
       }
 
       // Fetch logs with pagination
@@ -132,21 +166,32 @@ function DashboardContent() {
       } else {
         // Use demo data as fallback
         setLogs(getDemoPRAnalysisRecords(repo));
+        setUsingDemo(true);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
       // Gracefully fall back to demo data
       setData(getDemoAuditSummary(repo));
       setLogs(getDemoPRAnalysisRecords(repo));
+      setUsingDemo(true);
     } finally {
       setLoading(false);
       setTimeout(() => setIsRefreshing(false), 500);
     }
-  };
+  }, [repo, apiKey, currentPage, itemsPerPage, filters]);
 
   useEffect(() => {
     fetchData();
-  }, [repo, currentPage, pageSize, filters]);
+  }, [fetchData]);
+
+  useEffect(() => {
+    refreshGitHubConnection();
+
+    const search = new URLSearchParams(window.location.search);
+    if (search.get('github')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [refreshGitHubConnection]);
 
   // ============= CHART DATA =============
   const chartData = useMemo(() => {
@@ -163,38 +208,40 @@ function DashboardContent() {
 
   // ============= PAGINATION HELPERS =============
   const totalPages = Math.ceil((logs.length > 0 ? logs.length * 3 : 0) / itemsPerPage) || 1;
-  const canPreviousPage = currentPage > 1;
-  const canNextPage = currentPage < totalPages;
-
-  const handleApplySeverityFilter = (severity: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      severity: severity as any,
-    }));
-    setCurrentPage(1);
-  };
-
-  const handleClearFilters = () => {
-    setFilters({});
-    setCurrentPage(1);
-  };
+  void totalPages;
 
   // ============= PHASE 3: DATE RANGE HANDLERS =============
-  const handleApplyDateFilter = (startDate: Date | null, endDate: Date | null) => {
-    setDateFilter({ startDate, endDate });
+  const handleApplyDateFilter = () => {
     setCurrentPage(1);
     setDateRangeOpen(false);
   };
 
   const handleClearDateFilter = () => {
-    setDateFilter({ startDate: null, endDate: null });
+    setFilters({});
     setCurrentPage(1);
   };
 
   // ============= PHASE 3: REPOSITORY HANDLER =============
-  const handleSelectRepository = (name: string, fullName: string) => {
+  const handleSelectRepository = (_name: string, fullName: string) => {
     setRepo(fullName);
     setCurrentPage(1);
+  };
+
+  const handleConnectGitHub = async () => {
+    const authorizationURL = await startGitHubConnection(apiKey);
+    if (!authorizationURL) {
+      return;
+    }
+    window.location.href = authorizationURL;
+  };
+
+  const handleDisconnectGitHub = async () => {
+    const ok = await disconnectGitHub(apiKey);
+    if (!ok) {
+      return;
+    }
+    setGithubStatus({ connected: false, repos: [] });
+    await refreshGitHubConnection();
   };
 
   // ============= PHASE 3: EXPORT HANDLERS =============
@@ -214,7 +261,7 @@ function DashboardContent() {
   };
 
   const handleExportHTML = () => {
-    const html = generateHTMLReport(logs, data);
+    const html = generateHTMLReport(logs, data ?? undefined);
     const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
@@ -308,9 +355,40 @@ function DashboardContent() {
                     repositories={repositories}
                   />
                </div>
+              {usingDemo && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                  Demo data
+                </span>
+              )}
+              {!usingDemo && !hasAnalyses && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/30">
+                  No analyses yet
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 ml-auto">
+               <div className="hidden md:flex items-center gap-2 px-2 py-1.5 rounded border border-[#27272A] bg-[#0F0F11]">
+                 <span className="text-[11px] text-slate-500">
+                   {githubStatus?.connected ? `GitHub: ${githubStatus.login ?? 'connected'}` : 'GitHub: not connected'}
+                 </span>
+                 {githubStatus?.connected ? (
+                   <button
+                     onClick={handleDisconnectGitHub}
+                     className="text-[11px] px-2 py-1 rounded bg-rose-500/10 text-rose-300 border border-rose-500/30 hover:bg-rose-500/20 transition-all"
+                   >
+                     Disconnect
+                   </button>
+                 ) : (
+                   <button
+                     onClick={handleConnectGitHub}
+                     className="text-[11px] px-2 py-1 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition-all"
+                   >
+                     Connect GitHub
+                   </button>
+                 )}
+               </div>
+
                {/* Phase 3: Date Range Filter */}
                <DateRangeFilter
                  isOpen={dateRangeOpen}
@@ -376,9 +454,9 @@ function DashboardContent() {
             ) : (
               <>
                  {activeTab === 'overview' && <RiskCommandView data={data} logs={logs} chartData={chartData} />}
-                 {activeTab === 'risks' && <VulnerabilitiesView data={data} logs={logs} />}
-                 {activeTab === 'repos' && <RepositoriesView data={data} repo={repo} />}
-                 {activeTab === 'settings' && <PoliciesView />}
+                 {activeTab === 'analysis' && <VulnerabilitiesView data={data} logs={logs} />}
+                 {activeTab === 'policies' && <PoliciesView />}
+                 {activeTab === 'settings' && <RepositoriesView data={data} repo={repo} />}
               </>
             )}
          </div>
@@ -387,7 +465,15 @@ function DashboardContent() {
   );
 }
 
-function RiskCommandView({ data, logs, chartData }: any) {
+function RiskCommandView({
+  data,
+  logs,
+  chartData,
+}: {
+  data: AuditSummary | null;
+  logs: PRAnalysisRecord[];
+  chartData: ChartDataPoint[];
+}) {
   return (
     <div className="animate-in fade-in duration-500">
       <div className="mb-8">
@@ -451,8 +537,8 @@ function RiskCommandView({ data, logs, chartData }: any) {
   );
 }
 
-function VulnerabilitiesView({ data, logs }: any) {
-  const riskyLogs = logs.filter((l: any) => l.critical > 0 || l.high > 0);
+function VulnerabilitiesView({ data, logs }: { data: AuditSummary | null; logs: PRAnalysisRecord[] }) {
+  const riskyLogs = logs.filter((l) => l.critical > 0 || l.high > 0);
   
   return (
     <div className="animate-in fade-in duration-500">
@@ -486,7 +572,7 @@ function VulnerabilitiesView({ data, logs }: any) {
              <tbody className="divide-y divide-[#1F1F22]">
                {riskyLogs.length === 0 ? (
                  <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No active vulnerabilities found. You are secure.</td></tr>
-               ) : riskyLogs.map((log: any, index: number) => (
+               ) : riskyLogs.map((log, index: number) => (
                  <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
                    <td className="px-6 py-4"><span className="font-mono text-slate-300">#{log.prNumber}</span></td>
                    <td className="px-6 py-4">
@@ -509,7 +595,7 @@ function VulnerabilitiesView({ data, logs }: any) {
   );
 }
 
-function RepositoriesView({ data, repo }: any) {
+function RepositoriesView({ data, repo }: { data: AuditSummary | null; repo: string }) {
   return (
     <div className="animate-in fade-in duration-500">
       <div className="mb-8">
@@ -619,7 +705,7 @@ function PoliciesView() {
   );
 }
 
-function LogTable({ logs, title }: any) {
+function LogTable({ logs, title }: { logs: PRAnalysisRecord[]; title: string }) {
   return (
     <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl overflow-hidden mt-2">
        <div className="px-6 py-4 border-b border-[#1F1F22] flex justify-between items-center">
@@ -640,7 +726,7 @@ function LogTable({ logs, title }: any) {
            <tbody className="divide-y divide-[#1F1F22]">
              {logs.length === 0 ? (
                <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No recent payload intercepted.</td></tr>
-             ) : logs.map((log: any, index: number) => (
+             ) : logs.map((log, index: number) => (
                <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
                  <td className="px-6 py-3.5">
                    <div className="flex items-center gap-2">
@@ -681,7 +767,19 @@ function LogTable({ logs, title }: any) {
   )
 }
 
-function MetricCard({ title, value, icon: Icon, color, bg }: any) {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+  color,
+  bg,
+}: {
+  title: string;
+  value: string | number;
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+}) {
   return (
     <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl p-5 flex flex-col justify-between">
       <div className="flex justify-between items-start">

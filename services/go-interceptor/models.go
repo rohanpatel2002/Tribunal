@@ -42,18 +42,20 @@ type AnalysisSummary struct {
 }
 
 type AnalyzeResponse struct {
-	ID             string         `json:"id,omitempty"`
-	Repository     string         `json:"repository"`
-	PRNumber       int            `json:"prNumber"`
-	Recommendation string         `json:"recommendation"`
-	TotalFiles     int            `json:"totalFiles"`
-	AIGenerated    int            `json:"aiGenerated"`
-	Critical       int            `json:"critical"`
-	High           int            `json:"high"`
-	Medium         int            `json:"medium"`
-	Low            int            `json:"low"`
-	Files          []FileAnalysis `json:"files,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt,omitempty"`
+	ID                string             `json:"id,omitempty"`
+	Repository        string             `json:"repository"`
+	PRNumber          int                `json:"prNumber"`
+	Recommendation    string             `json:"recommendation"`
+	TotalFiles        int                `json:"totalFiles"`
+	AIGenerated       int                `json:"aiGenerated"`
+	Critical          int                `json:"critical"`
+	High              int                `json:"high"`
+	Medium            int                `json:"medium"`
+	Low               int                `json:"low"`
+	Files             []FileAnalysis     `json:"files,omitempty"`
+	ContextBriefing   string             `json:"contextBriefing,omitempty"`
+	RepositoryContext *RepositoryContext `json:"repositoryContext,omitempty"`
+	CreatedAt         time.Time          `json:"createdAt,omitempty"`
 }
 
 type AuditSummary struct {
@@ -67,16 +69,19 @@ type AuditSummary struct {
 }
 
 type PRAnalysisRecord struct {
-	ID             string `json:"id"`
-	Repository     string `json:"repository"`
-	PRNumber       int    `json:"prNumber"`
-	Recommendation string `json:"recommendation"`
-	TotalFiles     int    `json:"totalFiles"`
-	AIGenerated    int    `json:"aiGenerated"`
-	Critical       int    `json:"critical"`
-	High           int    `json:"high"`
-	Medium         int    `json:"medium"`
-	Low            int    `json:"low"`
+	ID                string             `json:"id"`
+	Repository        string             `json:"repository"`
+	PRNumber          int                `json:"prNumber"`
+	Recommendation    string             `json:"recommendation"`
+	TotalFiles        int                `json:"totalFiles"`
+	AIGenerated       int                `json:"aiGenerated"`
+	Critical          int                `json:"critical"`
+	High              int                `json:"high"`
+	Medium            int                `json:"medium"`
+	Low               int                `json:"low"`
+	CreatedAt         time.Time          `json:"createdAt,omitempty"`
+	ContextBriefing   string             `json:"contextBriefing,omitempty"`
+	RepositoryContext *RepositoryContext `json:"repositoryContext,omitempty"`
 }
 
 // SecurityPolicy defines a security enforcement rule

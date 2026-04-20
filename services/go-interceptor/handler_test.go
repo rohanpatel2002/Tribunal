@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,7 +41,7 @@ func TestAnalyzeHandler_MethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/analyze", nil)
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	h.analyzeHandler(rr, req)
 
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -52,7 +53,7 @@ func TestAnalyzeHandler_InvalidJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/analyze", strings.NewReader("{"))
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	h.analyzeHandler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -65,7 +66,7 @@ func TestAnalyzeHandler_ValidRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/analyze", strings.NewReader(payload))
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	h.analyzeHandler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -111,7 +112,7 @@ func TestGithubWebhookHandler_ValidPayload(t *testing.T) {
 	req.Header.Set("X-GitHub-Delivery", "test-delivery-id-12345")
 	rr := httptest.NewRecorder()
 
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	h.githubWebhookHandler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -123,7 +124,7 @@ func TestGithubWebhookHandler_AlreadyProcessed(t *testing.T) {
 	mockRepo := &MockRepository{
 		processed: map[string]bool{"duplicate-delivery-id-999": true},
 	}
-	h := NewHandler(mockRepo, nil, nil)
+	h := NewHandler(mockRepo, nil, nil, nil)
 	payload := `{"action":"opened","repository":{"full_name":"rohanpatel2002/tribunal"},"pull_request":{"number":9,"head":{"sha":"abc123def"}},"tribunal_files":[{"path":"main.go","status":"modified","patch":"test"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(payload))
 	req.Header.Set("X-GitHub-Delivery", "duplicate-delivery-id-999")
@@ -206,7 +207,7 @@ func TestGetAnalysisHandler_Success(t *testing.T) {
 		},
 	}
 
-	h := NewHandler(mockRepo, &MockGitHubClient{}, nil)
+	h := NewHandler(mockRepo, &MockGitHubClient{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=100", nil)
 	rr := httptest.NewRecorder()
 
@@ -220,6 +221,38 @@ func TestGetAnalysisHandler_Success(t *testing.T) {
 	}
 }
 
+func TestGitHubConnectStartHandler_NotConfigured(t *testing.T) {
+	t.Setenv("GITHUB_OAUTH_CLIENT_ID", "")
+
+	h := NewHandler(nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/github/connect/start", nil)
+	rr := httptest.NewRecorder()
+
+	h.githubConnectStartHandler(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected %d, got %d", http.StatusServiceUnavailable, rr.Code)
+	}
+}
+
+func TestGitHubConnectionStatusHandler_NoSession(t *testing.T) {
+	_ = os.Unsetenv("GITHUB_OAUTH_CLIENT_ID")
+
+	h := NewHandler(nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/github/connect/status", nil)
+	rr := httptest.NewRecorder()
+
+	h.githubConnectionStatusHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	if !strings.Contains(rr.Body.String(), "\"connected\":false") {
+		t.Fatalf("expected disconnected status, got body=%s", rr.Body.String())
+	}
+}
+
 func TestGetAnalysisHandler_NotFound(t *testing.T) {
 	mockRepo := &MockRepository{
 		GetFunc: func(ctx context.Context, repo string, pr int) (*AnalyzeResponse, error) {
@@ -227,7 +260,7 @@ func TestGetAnalysisHandler_NotFound(t *testing.T) {
 		},
 	}
 
-	h := NewHandler(mockRepo, &MockGitHubClient{}, nil)
+	h := NewHandler(mockRepo, &MockGitHubClient{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=999", nil)
 	rr := httptest.NewRecorder()
 
@@ -240,7 +273,7 @@ func TestGetAnalysisHandler_NotFound(t *testing.T) {
 
 func TestGetAnalysisHandler_NoDBConfigured(t *testing.T) {
 	// Notice we pass nil for the repository
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/analysis?repo=rohanpatel2002/tribunal&pr=100", nil)
 	rr := httptest.NewRecorder()
 
