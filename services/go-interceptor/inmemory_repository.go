@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -97,7 +98,7 @@ func (r *InMemoryRepository) saveToFile() {
 func (r *InMemoryRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResponse) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	repoName := response.Repository
+	repoName := normalizeRepoName(response.Repository)
 	r.analyses[repoName] = append(r.analyses[repoName], response)
 	r.saveToFile()
 	return nil
@@ -106,7 +107,7 @@ func (r *InMemoryRepository) SaveAnalysis(ctx context.Context, response *Analyze
 func (r *InMemoryRepository) GetAnalysisByPR(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	list := r.analyses[repository]
+	list := r.analyses[normalizeRepoName(repository)]
 	for _, a := range list {
 		if a.PRNumber == prNumber {
 			return a, nil
@@ -118,7 +119,7 @@ func (r *InMemoryRepository) GetAnalysisByPR(ctx context.Context, repository str
 func (r *InMemoryRepository) MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	key := repoFullName + ":" + deliveryID
+	key := normalizeRepoName(repoFullName) + ":" + deliveryID
 	if r.processedWeb[key] {
 		return false, nil
 	}
@@ -135,7 +136,7 @@ func (r *InMemoryRepository) GetRepositoryAuditSummary(ctx context.Context, repo
 		Repository: repository,
 	}
 
-	list := r.analyses[repository]
+	list := r.analyses[normalizeRepoName(repository)]
 	if len(list) == 0 {
 		return summary, nil
 	}
@@ -173,7 +174,7 @@ func (r *InMemoryRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	list := r.analyses[repository]
+	list := r.analyses[normalizeRepoName(repository)]
 	var records []PRAnalysisRecord
 
 	// traverse backwards to get the most recent appended items first
@@ -212,6 +213,7 @@ func (r *InMemoryRepository) SaveSecurityPolicy(ctx context.Context, policy *Sec
 	}
 
 	// Append or update the policy
+	policy.Repository = normalizeRepoName(policy.Repository)
 	r.policies[policy.Repository] = append(r.policies[policy.Repository], policy)
 	r.saveToFile()
 	return nil
@@ -223,7 +225,7 @@ func (r *InMemoryRepository) GetSecurityPolicies(ctx context.Context, repository
 	defer r.mu.RUnlock()
 
 	var policies []SecurityPolicy
-	if list, exists := r.policies[repository]; exists {
+	if list, exists := r.policies[normalizeRepoName(repository)]; exists {
 		for _, p := range list {
 			if p.IsActive {
 				policies = append(policies, *p)
@@ -238,7 +240,7 @@ func (r *InMemoryRepository) DeleteSecurityPolicy(ctx context.Context, repositor
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if list, exists := r.policies[repository]; exists {
+	if list, exists := r.policies[normalizeRepoName(repository)]; exists {
 		for _, p := range list {
 			if p.PolicyName == policyName {
 				p.IsActive = false
@@ -297,6 +299,7 @@ func (r *InMemoryRepository) CreateAPIKey(metadata *APIKeyMetadata, keySecret st
 	if meta.Repository == "" {
 		meta.Repository = "global"
 	}
+	meta.Repository = normalizeRepoName(meta.Repository)
 	meta.IsActive = true
 
 	if keySecret != "" {
@@ -342,7 +345,7 @@ func (r *InMemoryRepository) ListActiveAPIKeys(repository string) ([]*APIKeyMeta
 	now := time.Now()
 	keys := make([]*APIKeyMetadata, 0)
 	for _, meta := range r.apiKeys {
-		if repository != "" && meta.Repository != repository {
+		if repository != "" && normalizeRepoName(meta.Repository) != normalizeRepoName(repository) {
 			continue
 		}
 		if !meta.IsActive || now.After(meta.ExpiresAt) {
@@ -361,6 +364,10 @@ func (r *InMemoryRepository) ListActiveAPIKeys(repository string) ([]*APIKeyMeta
 	})
 
 	return keys, nil
+}
+
+func normalizeRepoName(repository string) string {
+	return strings.ToLower(strings.TrimSpace(repository))
 }
 
 func cloneAPIKeyMetadata(meta *APIKeyMetadata) *APIKeyMetadata {

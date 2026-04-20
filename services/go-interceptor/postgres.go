@@ -217,16 +217,16 @@ func (r *PostgresRepository) MarkWebhookProcessed(ctx context.Context, deliveryI
 func (r *PostgresRepository) GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error) {
 	summary := &AuditSummary{Repository: repository}
 	query := `
-	SELECT
-		COALESCE(SUM(total_files), 0),
-		COALESCE(SUM(ai_generated), 0),
-		COALESCE(SUM(critical), 0),
-		COALESCE(SUM(high), 0),
-		COUNT(id),
-		COALESCE(AVG(CASE WHEN total_files > 0 THEN ai_generated::float / total_files ELSE 0 END), 0)
-	FROM pr_analyses
-	WHERE repository = $1
-	`
+		SELECT
+				COALESCE(SUM(total_files), 0),
+				COALESCE(SUM(ai_generated), 0),
+				COALESCE(SUM(critical), 0),
+				COALESCE(SUM(high), 0),
+				COUNT(id),
+				COALESCE(AVG(CASE WHEN total_files > 0 THEN ai_generated::float / total_files ELSE 0 END), 0)
+		FROM pr_analyses
+		WHERE LOWER(repository) = LOWER($1)
+		`
 
 	err := r.pool.QueryRow(ctx, query, repository).Scan(
 		&summary.TotalFiles,
@@ -270,12 +270,12 @@ func (r *PostgresRepository) GetSubscriptionTier(ctx context.Context, repoFullNa
 // GetRecentAnalyses grabs the most recent PR results to populate the enterprise audit log table.
 func (r *PostgresRepository) GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error) {
 	query := `
-        SELECT id::text, repository, pr_number, recommendation, total_files, ai_generated, critical, high, medium, low, context_briefing, created_at
-        FROM pr_analyses
-        WHERE repository = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-        `
+		SELECT id::text, repository, pr_number, recommendation, total_files, ai_generated, critical, high, medium, low, context_briefing, created_at
+		FROM pr_analyses
+		WHERE LOWER(repository) = LOWER($1)
+		ORDER BY created_at DESC
+		LIMIT $2
+		`
 	rows, err := r.pool.Query(ctx, query, repository, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed querying recent PR analyses: %w", err)
