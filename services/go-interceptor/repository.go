@@ -42,4 +42,13 @@ type Repository interface {
 
 	// GetRecentAnalyses retrieves a paginated list of recent PR analyses for audit logging purposes.
 	GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error)
+
+	// SaveSecurityPolicy persists a security policy to the database.
+	SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error
+
+	// GetSecurityPolicies retrieves all active policies for a repository.
+	GetSecurityPolicies(ctx context.Context, repository string) ([]SecurityPolicy, error)
+
+	// DeleteSecurityPolicy deactivates a security policy.
+	DeleteSecurityPolicy(ctx context.Context, repository string, policyName string, actor string) error
 }

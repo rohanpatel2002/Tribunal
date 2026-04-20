@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
+	"time"
 )
 
 // InMemoryRepository stores data in RAM, backed up to a JSON file.
@@ -13,6 +17,9 @@ import (
 type InMemoryRepository struct {
 	mu           sync.RWMutex
 	analyses     map[string][]*AnalyzeResponse
+	policies     map[string][]*SecurityPolicy
+	apiKeys      map[string]*APIKeyMetadata
+	events       []*SecurityEvent
 	processedWeb map[string]bool
 	dbFile       string
 }
@@ -20,6 +27,7 @@ type InMemoryRepository struct {
 func NewInMemoryRepository() *InMemoryRepository {
 	repo := &InMemoryRepository{
 		analyses:     make(map[string][]*AnalyzeResponse),
+		apiKeys:      make(map[string]*APIKeyMetadata),
 		processedWeb: make(map[string]bool),
 		dbFile:       "local_database.json",
 	}
@@ -30,6 +38,8 @@ func NewInMemoryRepository() *InMemoryRepository {
 // DataStruct holds the state we serialize to the hard drive.
 type dbState struct {
 	Analyses     map[string][]*AnalyzeResponse `json:"analyses"`
+	Policies     map[string][]*SecurityPolicy  `json:"policies"`
+	APIKeys      map[string]*APIKeyMetadata    `json:"apiKeys"`
 	ProcessedWeb map[string]bool               `json:"processedWeb"`
 }
 
@@ -54,6 +64,12 @@ func (r *InMemoryRepository) loadFromFile() {
 	if state.Analyses != nil {
 		r.analyses = state.Analyses
 	}
+	if state.Policies != nil {
+		r.policies = state.Policies
+	}
+	if state.APIKeys != nil {
+		r.apiKeys = state.APIKeys
+	}
 	if state.ProcessedWeb != nil {
 		r.processedWeb = state.ProcessedWeb
 	}
@@ -62,6 +78,8 @@ func (r *InMemoryRepository) loadFromFile() {
 func (r *InMemoryRepository) saveToFile() {
 	state := dbState{
 		Analyses:     r.analyses,
+		Policies:     r.policies,
+		APIKeys:      r.apiKeys,
 		ProcessedWeb: r.processedWeb,
 	}
 
@@ -127,14 +145,14 @@ func (r *InMemoryRepository) GetRepositoryAuditSummary(ctx context.Context, repo
 
 	for _, a := range list {
 		summary.TotalPRs++
-		summary.TotalFiles += a.Summary.TotalFiles
-		if a.Summary.AIGenerated > 0 {
+		summary.TotalFiles += a.TotalFiles
+		if a.AIGenerated > 0 {
 			summary.AIGeneratedPRs++
 		}
-		summary.CriticalRisks += a.Summary.Critical
-		summary.HighRisks += a.Summary.High
+		summary.CriticalRisks += a.Critical
+		summary.HighRisks += a.High
 
-		for _, f := range a.Results {
+		for _, f := range a.Files {
 			sumAIScore += f.AIScore
 			fileCount++
 		}
@@ -168,15 +186,187 @@ func (r *InMemoryRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 			ID:             fmt.Sprintf("repo-%s-pr-%d", a.Repository, a.PRNumber),
 			Repository:     a.Repository,
 			PRNumber:       a.PRNumber,
-			Recommendation: a.Summary.Recommendation,
-			TotalFiles:     a.Summary.TotalFiles,
-			AIGenerated:    a.Summary.AIGenerated,
-			Critical:       a.Summary.Critical,
-			High:           a.Summary.High,
-			Medium:         a.Summary.Medium,
-			Low:            a.Summary.Low,
+			Recommendation: a.Recommendation,
+			TotalFiles:     a.TotalFiles,
+			AIGenerated:    a.AIGenerated,
+			Critical:       a.Critical,
+			High:           a.High,
+			Medium:         a.Medium,
+			Low:            a.Low,
 		})
 	}
 
 	return records, nil
+}
+
+// SaveSecurityPolicy saves a policy to in-memory storage.
+func (r *InMemoryRepository) SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.policies == nil {
+		r.policies = make(map[string][]*SecurityPolicy)
+	}
+
+	// Append or update the policy
+	r.policies[policy.Repository] = append(r.policies[policy.Repository], policy)
+	r.saveToFile()
+	return nil
+}
+
+// GetSecurityPolicies retrieves active policies for a repository.
+func (r *InMemoryRepository) GetSecurityPolicies(ctx context.Context, repository string) ([]SecurityPolicy, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var policies []SecurityPolicy
+	if list, exists := r.policies[repository]; exists {
+		for _, p := range list {
+			if p.IsActive {
+				policies = append(policies, *p)
+			}
+		}
+	}
+	return policies, nil
+}
+
+// DeleteSecurityPolicy deactivates a policy.
+func (r *InMemoryRepository) DeleteSecurityPolicy(ctx context.Context, repository string, policyName string, actor string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if list, exists := r.policies[repository]; exists {
+		for _, p := range list {
+			if p.PolicyName == policyName {
+				p.IsActive = false
+				break
+			}
+		}
+	}
+	r.saveToFile()
+	return nil
+}
+
+func (r *InMemoryRepository) GetAPIKeyMetadata(keyID string) (*APIKeyMetadata, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	meta, ok := r.apiKeys[keyID]
+	if !ok {
+		return nil, fmt.Errorf("api key not found")
+	}
+
+	copyMeta := cloneAPIKeyMetadata(meta)
+	expired, days := copyMeta.CheckKeyExpiry()
+	copyMeta.IsActive = copyMeta.IsActive && !expired
+	copyMeta.DaysUntilExpiry = days
+	copyMeta.RotationDue = !expired && days <= 14
+
+	return copyMeta, nil
+}
+
+func (r *InMemoryRepository) CreateAPIKey(metadata *APIKeyMetadata, keySecret string) error {
+	if metadata == nil {
+		return fmt.Errorf("api key metadata is required")
+	}
+	if metadata.KeyID == "" {
+		return fmt.Errorf("api key id is required")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.apiKeys[metadata.KeyID]; exists {
+		return fmt.Errorf("api key with id %s already exists", metadata.KeyID)
+	}
+
+	meta := cloneAPIKeyMetadata(metadata)
+	now := time.Now()
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = now
+	}
+	if meta.LastUsedAt.IsZero() {
+		meta.LastUsedAt = now
+	}
+	if meta.ExpiresAt.IsZero() {
+		meta.ExpiresAt = now.AddDate(0, 0, 90)
+	}
+	if meta.Repository == "" {
+		meta.Repository = "global"
+	}
+	meta.IsActive = true
+
+	if keySecret != "" {
+		sum := sha256.Sum256([]byte(keySecret))
+		meta.KeyHash = hex.EncodeToString(sum[:])
+	}
+
+	_, days := meta.CheckKeyExpiry()
+	meta.DaysUntilExpiry = days
+	meta.RotationDue = days <= 14
+
+	r.apiKeys[meta.KeyID] = meta
+	r.saveToFile()
+	return nil
+}
+
+func (r *InMemoryRepository) DeprecateAPIKey(keyID string, expiresAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	meta, ok := r.apiKeys[keyID]
+	if !ok {
+		return fmt.Errorf("api key not found")
+	}
+
+	meta.IsActive = false
+	if !expiresAt.IsZero() {
+		meta.ExpiresAt = expiresAt
+	}
+
+	_, days := meta.CheckKeyExpiry()
+	meta.DaysUntilExpiry = days
+	meta.RotationDue = false
+
+	r.saveToFile()
+	return nil
+}
+
+func (r *InMemoryRepository) ListActiveAPIKeys(repository string) ([]*APIKeyMetadata, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := time.Now()
+	keys := make([]*APIKeyMetadata, 0)
+	for _, meta := range r.apiKeys {
+		if repository != "" && meta.Repository != repository {
+			continue
+		}
+		if !meta.IsActive || now.After(meta.ExpiresAt) {
+			continue
+		}
+
+		copyMeta := cloneAPIKeyMetadata(meta)
+		_, days := copyMeta.CheckKeyExpiry()
+		copyMeta.DaysUntilExpiry = days
+		copyMeta.RotationDue = days <= 14
+		keys = append(keys, copyMeta)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].CreatedAt.After(keys[j].CreatedAt)
+	})
+
+	return keys, nil
+}
+
+func cloneAPIKeyMetadata(meta *APIKeyMetadata) *APIKeyMetadata {
+	if meta == nil {
+		return nil
+	}
+	copyMeta := *meta
+	if meta.Permissions != nil {
+		copyMeta.Permissions = append([]string(nil), meta.Permissions...)
+	}
+	return &copyMeta
 }

@@ -81,15 +81,38 @@ func main() {
 	}
 	slog.Info("CORS origins configured", "origins", allowedOrigins)
 
+	// Configure webhook security
+	githubWebhookSecret := os.Getenv("GITHUB_WEBHOOK_SECRET")
+	gitlabWebhookSecret := os.Getenv("GITLAB_WEBHOOK_SECRET")
+	bitbucketWebhookSecret := os.Getenv("BITBUCKET_WEBHOOK_SECRET")
+
+	if githubWebhookSecret != "" {
+		slog.Info("GitHub webhook signature verification enabled")
+	} else {
+		slog.Warn("GITHUB_WEBHOOK_SECRET not set, webhook signature verification disabled (development mode)")
+	}
+
 	mux := http.NewServeMux()
 
 	// Public Health Check
 	mux.HandleFunc("/health", h.healthHandler)
+	mux.HandleFunc("/health/detailed", HealthCheckHandler(repo))
 
-	// Webhooks (Authorized internally mostly by GitHub signature, though not implemented yet; let's keep it open for now)
-	mux.HandleFunc("/webhook/github", h.githubWebhookHandler)
-	mux.HandleFunc("/webhook/gitlab", h.gitlabWebhookHandler)
-	mux.HandleFunc("/webhook/bitbucket", h.bitbucketWebhookHandler)
+	// Webhooks with signature verification
+	githubWebhookHandler := http.Handler(http.HandlerFunc(h.githubWebhookHandler))
+	githubWebhookHandler = WebhookSignatureMiddleware(githubWebhookSecret, "github")(githubWebhookHandler)
+	githubWebhookHandler = RateLimitWebhooks(120, time.Minute)(githubWebhookHandler)
+	mux.Handle("/webhook/github", githubWebhookHandler)
+
+	gitlabWebhookHandler := http.Handler(http.HandlerFunc(h.gitlabWebhookHandler))
+	gitlabWebhookHandler = WebhookSignatureMiddleware(gitlabWebhookSecret, "gitlab")(gitlabWebhookHandler)
+	gitlabWebhookHandler = RateLimitWebhooks(120, time.Minute)(gitlabWebhookHandler)
+	mux.Handle("/webhook/gitlab", gitlabWebhookHandler)
+
+	bitbucketWebhookHandler := http.Handler(http.HandlerFunc(h.bitbucketWebhookHandler))
+	bitbucketWebhookHandler = WebhookSignatureMiddleware(bitbucketWebhookSecret, "bitbucket")(bitbucketWebhookHandler)
+	bitbucketWebhookHandler = RateLimitWebhooks(120, time.Minute)(bitbucketWebhookHandler)
+	mux.Handle("/webhook/bitbucket", bitbucketWebhookHandler)
 
 	// Public read endpoint for specific PRs
 	mux.HandleFunc("/analysis", h.getAnalysisHandler)
@@ -103,16 +126,24 @@ func main() {
 		mux.HandleFunc("/analyze", corsWrapper(RequireAuth(enterpriseAPIKey, h.analyzeHandler)))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler)))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler)))
+		mux.HandleFunc("/api/v1/audit/export", corsWrapper(RequireAuth(enterpriseAPIKey, ExportHandler(repo))))
+		mux.HandleFunc("/api/v1/policies", corsWrapper(RequireAuth(enterpriseAPIKey, PoliciesHandler(repo))))
+		mux.HandleFunc("/api/v1/api-keys", corsWrapper(RequireAuth(enterpriseAPIKey, h.listAPIKeysHandler)))
+		mux.HandleFunc("/api/v1/api-keys/rotate", corsWrapper(RequireAuth(enterpriseAPIKey, h.rotateAPIKeyHandler)))
 	} else {
 		mux.HandleFunc("/analyze", corsWrapper(h.analyzeHandler))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(h.getAuditSummaryHandler))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(h.getAuditLogsHandler))
+		mux.HandleFunc("/api/v1/audit/export", corsWrapper(ExportHandler(repo)))
+		mux.HandleFunc("/api/v1/policies", corsWrapper(PoliciesHandler(repo)))
+		mux.HandleFunc("/api/v1/api-keys", corsWrapper(h.listAPIKeysHandler))
+		mux.HandleFunc("/api/v1/api-keys/rotate", corsWrapper(h.rotateAPIKeyHandler))
 	}
 
 	addr := ":" + port
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      SecurityHeadersMiddleware(mux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,
