@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -57,22 +62,52 @@ type BitbucketWebhookPayload struct {
 
 // Handler holds the application's external dependencies (like the database).
 type Handler struct {
-	repo             Repository
-	githubClient     GitHubIntegrator
-	llmClient        LLMIntegrator
-	contextFetcher   *ContextFetcher
-	briefingGen      *EnhancedBriefingGenerator
+	repo            Repository
+	githubClient    GitHubIntegrator
+	llmClient       LLMIntegrator
+	contextFetcher  *ContextFetcher
+	briefingGen     *EnhancedBriefingGenerator
+	oauthHTTPClient *http.Client
+	oauthStore      GitHubOAuthStore
 }
 
 // NewHandler creates a new HTTP handler with the given repository and GitHub client.
-func NewHandler(repo Repository, gh GitHubIntegrator, llm LLMIntegrator) *Handler {
-	return &Handler{
-		repo:             repo,
-		githubClient:     gh,
-		llmClient:        llm,
-		contextFetcher:   NewContextFetcher(os.Getenv("GITHUB_TOKEN")),
-		briefingGen:      NewEnhancedBriefingGenerator(),
+func NewHandler(repo Repository, gh GitHubIntegrator, llm LLMIntegrator, oauthStore GitHubOAuthStore) *Handler {
+	if oauthStore == nil {
+		oauthStore = NewInMemoryGitHubOAuthStore()
 	}
+
+	return &Handler{
+		repo:            repo,
+		githubClient:    gh,
+		llmClient:       llm,
+		contextFetcher:  NewContextFetcher(os.Getenv("GITHUB_TOKEN")),
+		briefingGen:     NewEnhancedBriefingGenerator(),
+		oauthHTTPClient: &http.Client{Timeout: 10 * time.Second},
+		oauthStore:      oauthStore,
+	}
+}
+
+type githubOAuthState struct {
+	SessionID string
+	ExpiresAt time.Time
+}
+
+type githubRepo struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"fullName"`
+	HTMLURL  string `json:"htmlUrl"`
+	Private  bool   `json:"private"`
+}
+
+type githubConnection struct {
+	Login       string       `json:"login"`
+	Name        string       `json:"name"`
+	AvatarURL   string       `json:"avatarUrl"`
+	Repos       []githubRepo `json:"repos"`
+	ConnectedAt time.Time    `json:"connectedAt"`
+	AccessToken string       `json:"-"`
 }
 
 func (h *Handler) healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -712,6 +747,383 @@ func (h *Handler) rotateAPIKeyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) githubConnectStartHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	clientID := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_CLIENT_ID"))
+	if clientID == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "github oauth is not configured"})
+		return
+	}
+
+	redirectURI := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_REDIRECT_URL"))
+	if redirectURI == "" {
+		scheme := "http"
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			scheme = "https"
+		}
+		redirectURI = fmt.Sprintf("%s://%s/api/v1/github/connect/callback", scheme, r.Host)
+	}
+
+	sessionID, err := h.getOrCreateSessionID(w, r)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to initialize session"})
+		return
+	}
+
+	state, err := generateRandomToken(24)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to initialize oauth state"})
+		return
+	}
+
+	_ = h.oauthStore.CleanupExpiredOAuthStates(r.Context(), time.Now())
+	if err := h.oauthStore.SaveOAuthState(r.Context(), state, githubOAuthState{
+		SessionID: sessionID,
+		ExpiresAt: time.Now().Add(10 * time.Minute),
+	}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist oauth state"})
+		return
+	}
+
+	githubAuthURL := url.URL{
+		Scheme: "https",
+		Host:   "github.com",
+		Path:   "/login/oauth/authorize",
+	}
+	params := githubAuthURL.Query()
+	params.Set("client_id", clientID)
+	params.Set("redirect_uri", redirectURI)
+	params.Set("scope", "read:user repo")
+	params.Set("state", state)
+	githubAuthURL.RawQuery = params.Encode()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"authorizationURL": githubAuthURL.String(),
+		"expiresIn":        600,
+	})
+}
+
+func (h *Handler) githubConnectCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if code == "" || state == "" {
+		h.redirectOAuthResult(w, r, "missing_code_or_state")
+		return
+	}
+
+	sessionID, ok := h.getSessionID(r)
+	if !ok {
+		h.redirectOAuthResult(w, r, "missing_session")
+		return
+	}
+
+	stateEntry, exists, err := h.oauthStore.ConsumeOAuthState(r.Context(), state)
+	if err != nil {
+		slog.Error("failed to consume oauth state", "error", err)
+		h.redirectOAuthResult(w, r, "invalid_state")
+		return
+	}
+
+	if !exists || time.Now().After(stateEntry.ExpiresAt) || stateEntry.SessionID != sessionID {
+		h.redirectOAuthResult(w, r, "invalid_state")
+		return
+	}
+
+	redirectURI := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_REDIRECT_URL"))
+	if redirectURI == "" {
+		scheme := "http"
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			scheme = "https"
+		}
+		redirectURI = fmt.Sprintf("%s://%s/api/v1/github/connect/callback", scheme, r.Host)
+	}
+
+	token, err := h.exchangeGitHubOAuthCode(r.Context(), code, redirectURI)
+	if err != nil {
+		slog.Error("failed to exchange github oauth code", "error", err)
+		h.redirectOAuthResult(w, r, "token_exchange_failed")
+		return
+	}
+
+	user, err := h.fetchGitHubUser(r.Context(), token)
+	if err != nil {
+		slog.Error("failed to fetch github user", "error", err)
+		h.redirectOAuthResult(w, r, "user_fetch_failed")
+		return
+	}
+
+	repos, err := h.fetchGitHubRepos(r.Context(), token)
+	if err != nil {
+		slog.Error("failed to fetch github repositories", "error", err)
+		h.redirectOAuthResult(w, r, "repos_fetch_failed")
+		return
+	}
+
+	if err := h.oauthStore.SaveGitHubConnection(r.Context(), sessionID, &githubConnection{
+		Login:       user.Login,
+		Name:        user.Name,
+		AvatarURL:   user.AvatarURL,
+		Repos:       repos,
+		ConnectedAt: time.Now().UTC(),
+		AccessToken: token,
+	}); err != nil {
+		slog.Error("failed to persist github connection", "error", err)
+		h.redirectOAuthResult(w, r, "connection_store_failed")
+		return
+	}
+
+	h.redirectOAuthResult(w, r, "connected")
+}
+
+func (h *Handler) githubConnectionStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	sessionID, ok := h.getSessionID(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"connected": false, "repos": []githubRepo{}})
+		return
+	}
+
+	conn, err := h.oauthStore.GetGitHubConnection(r.Context(), sessionID)
+	if err != nil {
+		slog.Error("failed to load github connection", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load github connection"})
+		return
+	}
+
+	if conn == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"connected": false, "repos": []githubRepo{}})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"connected":   true,
+		"login":       conn.Login,
+		"name":        conn.Name,
+		"avatarUrl":   conn.AvatarURL,
+		"connectedAt": conn.ConnectedAt,
+		"repos":       conn.Repos,
+	})
+}
+
+func (h *Handler) githubDisconnectHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	sessionID, ok := h.getSessionID(r)
+	if ok {
+		if err := h.oauthStore.DeleteGitHubConnection(r.Context(), sessionID); err != nil {
+			slog.Error("failed to delete github connection", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to disconnect"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"disconnected": true})
+}
+
+func (h *Handler) redirectOAuthResult(w http.ResponseWriter, r *http.Request, status string) {
+	redirectURL := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_SUCCESS_REDIRECT"))
+	if redirectURL == "" {
+		redirectURL = "http://localhost:3000"
+	}
+
+	target, err := url.Parse(redirectURL)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "invalid oauth success redirect configuration"})
+		return
+	}
+
+	query := target.Query()
+	query.Set("github", status)
+	target.RawQuery = query.Encode()
+	http.Redirect(w, r, target.String(), http.StatusFound)
+}
+
+func (h *Handler) getOrCreateSessionID(w http.ResponseWriter, r *http.Request) (string, error) {
+	if cookie, err := r.Cookie("tribunal_session"); err == nil {
+		if v := strings.TrimSpace(cookie.Value); v != "" {
+			return v, nil
+		}
+	}
+
+	sessionID, err := generateRandomToken(24)
+	if err != nil {
+		return "", err
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "tribunal_session",
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   60 * 60 * 24 * 30,
+	})
+
+	return sessionID, nil
+}
+
+func (h *Handler) getSessionID(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie("tribunal_session")
+	if err != nil {
+		return "", false
+	}
+	v := strings.TrimSpace(cookie.Value)
+	if v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+func generateRandomToken(numBytes int) (string, error) {
+	b := make([]byte, numBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func (h *Handler) exchangeGitHubOAuthCode(ctx context.Context, code, redirectURI string) (string, error) {
+	clientID := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_CLIENT_ID"))
+	clientSecret := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"))
+	if clientID == "" || clientSecret == "" {
+		return "", fmt.Errorf("github oauth client credentials are not configured")
+	}
+
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+	form.Set("code", code)
+	form.Set("redirect_uri", redirectURI)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://github.com/login/oauth/access_token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build token request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := h.oauthHTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token endpoint returned status %d", resp.StatusCode)
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	if tokenResp.AccessToken == "" {
+		if tokenResp.Error != "" {
+			return "", fmt.Errorf("github oauth error: %s", tokenResp.Error)
+		}
+		return "", fmt.Errorf("github oauth token response missing access_token")
+	}
+
+	return tokenResp.AccessToken, nil
+}
+
+func (h *Handler) fetchGitHubUser(ctx context.Context, accessToken string) (*githubConnection, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build github user request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := h.oauthHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github user request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github user endpoint returned status %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Login     string `json:"login"`
+		Name      string `json:"name"`
+		AvatarURL string `json:"avatar_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("failed to decode github user response: %w", err)
+	}
+
+	return &githubConnection{
+		Login:     payload.Login,
+		Name:      payload.Name,
+		AvatarURL: payload.AvatarURL,
+	}, nil
+}
+
+func (h *Handler) fetchGitHubRepos(ctx context.Context, accessToken string) ([]githubRepo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user/repos?per_page=100&sort=updated", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build github repos request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := h.oauthHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github repos request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github repos endpoint returned status %d", resp.StatusCode)
+	}
+
+	var payload []struct {
+		ID       int64  `json:"id"`
+		Name     string `json:"name"`
+		FullName string `json:"full_name"`
+		HTMLURL  string `json:"html_url"`
+		Private  bool   `json:"private"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("failed to decode github repos response: %w", err)
+	}
+
+	repos := make([]githubRepo, 0, len(payload))
+	for _, repo := range payload {
+		repos = append(repos, githubRepo{
+			ID:       repo.ID,
+			Name:     repo.Name,
+			FullName: repo.FullName,
+			HTMLURL:  repo.HTMLURL,
+			Private:  repo.Private,
+		})
+	}
+
+	return repos, nil
 }
 
 // filterBySeverity filters audit records by risk severity

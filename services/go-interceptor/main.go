@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,19 @@ func init() {
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
+}
+
+func parseDurationEnv(key string) (time.Duration, bool) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return 0, false
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		slog.Warn("invalid duration config", "key", key, "value", value, "error", err)
+		return 0, false
+	}
+	return parsed, true
 }
 
 func main() {
@@ -37,21 +51,54 @@ func main() {
 		slog.Warn("TRIBUNAL_API_KEY not set! Sensitive endpoints like /analyze will be unprotected (development mode).")
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+
 	dbURL := os.Getenv("DATABASE_URL")
 	var repo Repository
+	var oauthStore GitHubOAuthStore
 	if dbURL != "" {
 		pgRepo, err := NewPostgresRepository(context.Background(), dbURL)
 		if err != nil {
 			slog.Warn("failed to connect to Postgres. Falling back to in-memory storage.", "error", err)
 			repo = NewInMemoryRepository()
+			oauthStore = NewInMemoryGitHubOAuthStore()
 		} else {
 			slog.Info("connected to Postgres database")
 			repo = pgRepo
+			oauthStore = NewPostgresGitHubOAuthStore(pgRepo)
 			defer pgRepo.Close()
 		}
 	} else {
 		slog.Info("DATABASE_URL not set, running interceptor with in-memory persistence (data will reset on restart)")
 		repo = NewInMemoryRepository()
+		oauthStore = NewInMemoryGitHubOAuthStore()
+	}
+
+	var redisChecker RedisHealthChecker
+	var redisMetrics RedisMetricsProvider
+	if strings.TrimSpace(redisURL) != "" {
+		sessionTTL := defaultGitHubSessionTTL
+		if parsed, ok := parseDurationEnv("REDIS_GITHUB_SESSION_TTL"); ok {
+			sessionTTL = parsed
+		}
+
+		oauthStateTTL := time.Duration(0)
+		if parsed, ok := parseDurationEnv("REDIS_OAUTH_STATE_TTL"); ok {
+			oauthStateTTL = parsed
+		}
+
+		redisStore, err := NewRedisGitHubOAuthStore(redisURL, RedisGitHubOAuthOptions{
+			SessionTTL:    sessionTTL,
+			OAuthStateTTL: oauthStateTTL,
+		})
+		if err != nil {
+			slog.Warn("failed to connect to Redis, falling back to persistent store", "error", err)
+		} else {
+			slog.Info("Redis session store initialized")
+			oauthStore = redisStore
+			redisChecker = redisStore
+			redisMetrics = redisStore
+		}
 	}
 
 	githubToken := os.Getenv("GITHUB_TOKEN")
@@ -72,7 +119,7 @@ func main() {
 		slog.Info("OPENROUTER_API_KEY not set, using heuristic analysis only")
 	}
 
-	h := NewHandler(repo, ghClient, llmClient)
+	h := NewHandler(repo, ghClient, llmClient, oauthStore)
 
 	// Get allowed origins from environment
 	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
@@ -96,7 +143,9 @@ func main() {
 
 	// Public Health Check
 	mux.HandleFunc("/health", h.healthHandler)
-	mux.HandleFunc("/health/detailed", HealthCheckHandler(repo))
+	mux.HandleFunc("/health/detailed", HealthCheckHandler(repo, redisChecker))
+	mux.HandleFunc("/metrics", MetricsHandler(redisMetrics))
+	mux.HandleFunc("/metrics/prometheus", PrometheusMetricsHandler(redisMetrics))
 
 	// Webhooks with signature verification
 	githubWebhookHandler := http.Handler(http.HandlerFunc(h.githubWebhookHandler))
@@ -121,12 +170,16 @@ func main() {
 	corsWrapper := func(next http.HandlerFunc) http.HandlerFunc {
 		return CORSMiddleware(allowedOrigins, next)
 	}
+	mux.HandleFunc("/api/v1/github/connect/callback", corsWrapper(h.githubConnectCallbackHandler))
 
 	if enterpriseAPIKey != "" {
 		mux.HandleFunc("/analyze", corsWrapper(RequireAuth(enterpriseAPIKey, h.analyzeHandler)))
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditSummaryHandler)))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(RequireAuth(enterpriseAPIKey, h.getAuditLogsHandler)))
 		mux.HandleFunc("/api/v1/audit/export", corsWrapper(RequireAuth(enterpriseAPIKey, ExportHandler(repo))))
+		mux.HandleFunc("/api/v1/github/connect/start", corsWrapper(RequireAuth(enterpriseAPIKey, h.githubConnectStartHandler)))
+		mux.HandleFunc("/api/v1/github/connect/status", corsWrapper(RequireAuth(enterpriseAPIKey, h.githubConnectionStatusHandler)))
+		mux.HandleFunc("/api/v1/github/connect/disconnect", corsWrapper(RequireAuth(enterpriseAPIKey, h.githubDisconnectHandler)))
 		mux.HandleFunc("/api/v1/policies", corsWrapper(RequireAuth(enterpriseAPIKey, PoliciesHandler(repo))))
 		mux.HandleFunc("/api/v1/api-keys", corsWrapper(RequireAuth(enterpriseAPIKey, h.listAPIKeysHandler)))
 		mux.HandleFunc("/api/v1/api-keys/rotate", corsWrapper(RequireAuth(enterpriseAPIKey, h.rotateAPIKeyHandler)))
@@ -135,6 +188,9 @@ func main() {
 		mux.HandleFunc("/api/v1/audit/summary", corsWrapper(h.getAuditSummaryHandler))
 		mux.HandleFunc("/api/v1/audit/logs", corsWrapper(h.getAuditLogsHandler))
 		mux.HandleFunc("/api/v1/audit/export", corsWrapper(ExportHandler(repo)))
+		mux.HandleFunc("/api/v1/github/connect/start", corsWrapper(h.githubConnectStartHandler))
+		mux.HandleFunc("/api/v1/github/connect/status", corsWrapper(h.githubConnectionStatusHandler))
+		mux.HandleFunc("/api/v1/github/connect/disconnect", corsWrapper(h.githubDisconnectHandler))
 		mux.HandleFunc("/api/v1/policies", corsWrapper(PoliciesHandler(repo)))
 		mux.HandleFunc("/api/v1/api-keys", corsWrapper(h.listAPIKeysHandler))
 		mux.HandleFunc("/api/v1/api-keys/rotate", corsWrapper(h.rotateAPIKeyHandler))

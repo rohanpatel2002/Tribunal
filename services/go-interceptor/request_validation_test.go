@@ -8,7 +8,7 @@ import (
 )
 
 func TestAnalyzeHandler_RejectsUnknownFields(t *testing.T) {
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	body := `{"repository":"rohanpatel2002/tribunal","prNumber":12,"files":[{"path":"main.go","status":"modified","patch":"x"}],"unexpected":true}`
 	req := httptest.NewRequest(http.MethodPost, "/analyze", strings.NewReader(body))
 	rr := httptest.NewRecorder()
@@ -21,7 +21,7 @@ func TestAnalyzeHandler_RejectsUnknownFields(t *testing.T) {
 }
 
 func TestAnalyzeHandler_RejectsOversizedPayload(t *testing.T) {
-	h := NewHandler(nil, &MockGitHubClient{}, nil)
+	h := NewHandler(nil, &MockGitHubClient{}, nil, nil)
 	largePatch := strings.Repeat("a", maxPayloadSize+1024)
 	body := `{"repository":"rohanpatel2002/tribunal","prNumber":12,"files":[{"path":"main.go","status":"modified","patch":"` + largePatch + `"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/analyze", strings.NewReader(body))

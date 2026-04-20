@@ -39,11 +39,11 @@ type IncidentPattern struct {
 
 // DeploymentEvent tracks deployment history and incidents.
 type DeploymentEvent struct {
-	Version      string `json:"version"`
-	Date         string `json:"date"`
-	Status       string `json:"status"`
-	Changes      int    `json:"changes"`
-	Incidents    int    `json:"incidents"`
+	Version        string `json:"version"`
+	Date           string `json:"date"`
+	Status         string `json:"status"`
+	Changes        int    `json:"changes"`
+	Incidents      int    `json:"incidents"`
 	RollbackReason string `json:"rollback_reason,omitempty"`
 }
 
@@ -57,9 +57,9 @@ type ServiceDep struct {
 
 // ContextFetcher retrieves repository context from GitHub and synthesizes briefings.
 type ContextFetcher struct {
-	httpClient *http.Client
+	httpClient  *http.Client
 	githubToken string
-	baseURL    string
+	baseURL     string
 }
 
 // NewContextFetcher creates a new context fetcher.
@@ -317,16 +317,16 @@ func parseServiceDependencies(readme, archNotes string) []ServiceDep {
 
 	// Simple pattern matching for common service names
 	servicePatterns := map[string]bool{
-		"postgres":   true,
-		"redis":      true,
-		"mongodb":    true,
-		"mysql":      true,
-		"kafka":      true,
-		"rabbitmq":   true,
+		"postgres":      true,
+		"redis":         true,
+		"mongodb":       true,
+		"mysql":         true,
+		"kafka":         true,
+		"rabbitmq":      true,
 		"elasticsearch": true,
-		"dynamodb":   true,
-		"s3":         true,
-		"datadog":    true,
+		"dynamodb":      true,
+		"s3":            true,
+		"datadog":       true,
 	}
 
 	combined := readme + " " + archNotes

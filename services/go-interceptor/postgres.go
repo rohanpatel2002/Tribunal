@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,9 +57,9 @@ func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *Analyze
 	insertPRQuery := `
 		INSERT INTO pr_analyses (
 			repository, pr_number, recommendation, total_files, 
-			ai_generated, critical, high, medium, low
+			ai_generated, critical, high, medium, low, context_briefing
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 		) RETURNING id`
 
 	err = tx.QueryRow(ctx, insertPRQuery,
@@ -71,6 +72,7 @@ func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *Analyze
 		response.High,
 		response.Medium,
 		response.Low,
+		response.ContextBriefing,
 	).Scan(&prAnalysisID)
 
 	if err != nil {
@@ -215,15 +217,16 @@ func (r *PostgresRepository) MarkWebhookProcessed(ctx context.Context, deliveryI
 func (r *PostgresRepository) GetRepositoryAuditSummary(ctx context.Context, repository string) (*AuditSummary, error) {
 	summary := &AuditSummary{Repository: repository}
 	query := `
-        SELECT
-                COALESCE(SUM(total_files), 0),
-                COALESCE(SUM(ai_generated), 0),
-                COALESCE(SUM(critical), 0),
-                COALESCE(SUM(high), 0),
-                COUNT(id)
-        FROM pr_analyses
-        WHERE repository = $1
-        `
+	SELECT
+		COALESCE(SUM(total_files), 0),
+		COALESCE(SUM(ai_generated), 0),
+		COALESCE(SUM(critical), 0),
+		COALESCE(SUM(high), 0),
+		COUNT(id),
+		COALESCE(AVG(CASE WHEN total_files > 0 THEN ai_generated::float / total_files ELSE 0 END), 0)
+	FROM pr_analyses
+	WHERE repository = $1
+	`
 
 	err := r.pool.QueryRow(ctx, query, repository).Scan(
 		&summary.TotalFiles,
@@ -231,10 +234,8 @@ func (r *PostgresRepository) GetRepositoryAuditSummary(ctx context.Context, repo
 		&summary.CriticalRisks,
 		&summary.HighRisks,
 		&summary.TotalPRs,
+		&summary.AverageAIScore,
 	)
-
-	// Fake average calculation for metric demo.
-	summary.AverageAIScore = 0.5
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate audit metrics: %w", err)
@@ -269,7 +270,7 @@ func (r *PostgresRepository) GetSubscriptionTier(ctx context.Context, repoFullNa
 // GetRecentAnalyses grabs the most recent PR results to populate the enterprise audit log table.
 func (r *PostgresRepository) GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error) {
 	query := `
-        SELECT id::text, repository, pr_number, recommendation, total_files, ai_generated, critical, high, medium, low
+        SELECT id::text, repository, pr_number, recommendation, total_files, ai_generated, critical, high, medium, low, context_briefing, created_at
         FROM pr_analyses
         WHERE repository = $1
         ORDER BY created_at DESC
@@ -284,12 +285,16 @@ func (r *PostgresRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 	var results []PRAnalysisRecord
 	for rows.Next() {
 		var rec PRAnalysisRecord
+		var contextBriefing sql.NullString
 		if err := rows.Scan(
 			&rec.ID, &rec.Repository, &rec.PRNumber, &rec.Recommendation,
 			&rec.TotalFiles, &rec.AIGenerated, &rec.Critical, &rec.High,
-			&rec.Medium, &rec.Low,
+			&rec.Medium, &rec.Low, &contextBriefing, &rec.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning PR logs row: %w", err)
+		}
+		if contextBriefing.Valid {
+			rec.ContextBriefing = contextBriefing.String
 		}
 		results = append(results, rec)
 	}

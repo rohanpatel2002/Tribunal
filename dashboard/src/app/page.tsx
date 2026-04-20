@@ -33,9 +33,13 @@ import { RepositorySelector } from '@/components/RepositorySelector';
 import {
   fetchAuditSummary,
   fetchAuditLogs,
+  fetchGitHubConnectionStatus,
+  startGitHubConnection,
+  disconnectGitHub,
   getDemoAuditSummary,
   getDemoPRAnalysisRecords,
   type AuditSummary,
+  type GitHubConnectionStatus,
   type PRAnalysisRecord,
   type FilterParams,
 } from '@/lib/api';
@@ -95,13 +99,41 @@ function DashboardContent() {
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
 
   // ============= PHASE 3: REPOSITORY SELECTION =============
-  const [repositories] = useState<RepositoryOption[]>([
+  const [repositories, setRepositories] = useState<RepositoryOption[]>([
     { id: '1', name: 'tribunal', fullName: 'rohanpatel2002/tribunal', url: 'https://github.com/rohanpatel2002/tribunal', isMonitored: true },
     { id: '2', name: 'another-repo', fullName: 'rohanpatel2002/another-repo', url: 'https://github.com/rohanpatel2002/another-repo', isMonitored: true },
   ]);
+  const [githubStatus, setGithubStatus] = useState<GitHubConnectionStatus | null>(null);
 
   // ============= PHASE 3: EXPORT STATE =============
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const hasAnalyses = (data?.totalPRs ?? 0) > 0 || logs.length > 0;
+
+  const refreshGitHubConnection = useCallback(async () => {
+    const status = await fetchGitHubConnectionStatus(apiKey);
+    if (!status) {
+      return;
+    }
+
+    setGithubStatus(status);
+
+    if (status.connected && status.repos.length > 0) {
+      const mappedRepos: RepositoryOption[] = status.repos.map((connectedRepo) => ({
+        id: String(connectedRepo.id),
+        name: connectedRepo.name,
+        fullName: connectedRepo.fullName,
+        url: connectedRepo.htmlUrl,
+        isMonitored: true,
+      }));
+
+      setRepositories(mappedRepos);
+
+      const repoExists = mappedRepos.some((candidate) => candidate.fullName === repo);
+      if (!repoExists) {
+        setRepo(mappedRepos[0].fullName);
+      }
+    }
+  }, [apiKey, repo]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -152,6 +184,15 @@ function DashboardContent() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    refreshGitHubConnection();
+
+    const search = new URLSearchParams(window.location.search);
+    if (search.get('github')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [refreshGitHubConnection]);
+
   // ============= CHART DATA =============
   const chartData = useMemo(() => {
     return logs
@@ -186,6 +227,23 @@ function DashboardContent() {
     setCurrentPage(1);
   };
 
+  const handleConnectGitHub = async () => {
+    const authorizationURL = await startGitHubConnection(apiKey);
+    if (!authorizationURL) {
+      return;
+    }
+    window.location.href = authorizationURL;
+  };
+
+  const handleDisconnectGitHub = async () => {
+    const ok = await disconnectGitHub(apiKey);
+    if (!ok) {
+      return;
+    }
+    setGithubStatus({ connected: false, repos: [] });
+    await refreshGitHubConnection();
+  };
+
   // ============= PHASE 3: EXPORT HANDLERS =============
   const handleExportCSV = () => {
     exportToCSV(logs, getTimestampedFilename('audit-logs.csv'));
@@ -203,7 +261,7 @@ function DashboardContent() {
   };
 
   const handleExportHTML = () => {
-    const html = generateHTMLReport(logs, data);
+    const html = generateHTMLReport(logs, data ?? undefined);
     const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
@@ -302,9 +360,35 @@ function DashboardContent() {
                   Demo data
                 </span>
               )}
+              {!usingDemo && !hasAnalyses && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/30">
+                  No analyses yet
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 ml-auto">
+               <div className="hidden md:flex items-center gap-2 px-2 py-1.5 rounded border border-[#27272A] bg-[#0F0F11]">
+                 <span className="text-[11px] text-slate-500">
+                   {githubStatus?.connected ? `GitHub: ${githubStatus.login ?? 'connected'}` : 'GitHub: not connected'}
+                 </span>
+                 {githubStatus?.connected ? (
+                   <button
+                     onClick={handleDisconnectGitHub}
+                     className="text-[11px] px-2 py-1 rounded bg-rose-500/10 text-rose-300 border border-rose-500/30 hover:bg-rose-500/20 transition-all"
+                   >
+                     Disconnect
+                   </button>
+                 ) : (
+                   <button
+                     onClick={handleConnectGitHub}
+                     className="text-[11px] px-2 py-1 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition-all"
+                   >
+                     Connect GitHub
+                   </button>
+                 )}
+               </div>
+
                {/* Phase 3: Date Range Filter */}
                <DateRangeFilter
                  isOpen={dateRangeOpen}

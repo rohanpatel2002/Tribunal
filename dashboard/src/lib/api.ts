@@ -82,6 +82,23 @@ export interface ApiKeyInfo {
   daysUntilExpiry?: number;
 }
 
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  htmlUrl: string;
+  private: boolean;
+}
+
+export interface GitHubConnectionStatus {
+  connected: boolean;
+  login?: string;
+  name?: string;
+  avatarUrl?: string;
+  connectedAt?: string;
+  repos: GitHubRepo[];
+}
+
 export interface PaginationParams {
   offset?: number;
   limit?: number;
@@ -283,6 +300,68 @@ export async function checkHealthStatus(apiKey: string): Promise<boolean> {
     return response.ok;
   } catch (error) {
     console.warn('Health check failed:', error);
+    return false;
+  }
+}
+
+/**
+ * Start GitHub OAuth flow and return authorization URL
+ */
+export async function startGitHubConnection(apiKey: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/${API_VERSION}/github/connect/start`, {
+      method: 'GET',
+      headers: getAuthHeader(apiKey),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json();
+    return payload.authorizationURL ?? null;
+  } catch (error) {
+    console.error('Error starting GitHub connection:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch current GitHub connection status for current user session
+ */
+export async function fetchGitHubConnectionStatus(apiKey: string): Promise<GitHubConnectionStatus | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/${API_VERSION}/github/connect/status`, {
+      method: 'GET',
+      headers: getAuthHeader(apiKey),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching GitHub connection status:', error);
+    return null;
+  }
+}
+
+/**
+ * Disconnect current GitHub account from current session
+ */
+export async function disconnectGitHub(apiKey: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/api/${API_VERSION}/github/connect/disconnect`, {
+      method: 'POST',
+      headers: getAuthHeader(apiKey),
+      credentials: 'include',
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Error disconnecting GitHub account:', error);
     return false;
   }
 }

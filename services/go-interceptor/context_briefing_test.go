@@ -32,14 +32,14 @@ func TestContextFetcherGitHubIntegration(t *testing.T) {
 func TestParseDeploymentHistory(t *testing.T) {
 	releases := []map[string]interface{}{
 		{
-			"tag_name":    "v1.0.0",
-			"created_at":  "2026-04-01T10:00:00Z",
-			"body":        "Release 1.0.0 - 10 files changed",
+			"tag_name":   "v1.0.0",
+			"created_at": "2026-04-01T10:00:00Z",
+			"body":       "Release 1.0.0 - 10 files changed",
 		},
 		{
-			"tag_name":    "v1.0.1",
-			"created_at":  "2026-04-02T10:00:00Z",
-			"body":        "Hotfix: critical incident resolved. 2 files changed.",
+			"tag_name":   "v1.0.1",
+			"created_at": "2026-04-02T10:00:00Z",
+			"body":       "Hotfix: critical incident resolved. 2 files changed.",
 		},
 	}
 
@@ -62,9 +62,9 @@ func TestParseDeploymentHistory(t *testing.T) {
 func TestExtractIncidentPatterns(t *testing.T) {
 	releases := []map[string]interface{}{
 		{
-			"tag_name":    "v1.0.1",
-			"created_at":  "2026-04-02T10:00:00Z",
-			"body":        "CRITICAL INCIDENT: Database migration caused data loss. Rolled back immediately.",
+			"tag_name":   "v1.0.1",
+			"created_at": "2026-04-02T10:00:00Z",
+			"body":       "CRITICAL INCIDENT: Database migration caused data loss. Rolled back immediately.",
 		},
 	}
 
@@ -87,15 +87,15 @@ func TestEnhancedBriefingGeneration(t *testing.T) {
 	}
 
 	resp := &AnalyzeResponse{
-		Repository:    "rohanpatel2002/tribunal",
-		PRNumber:      42,
+		Repository:     "rohanpatel2002/tribunal",
+		PRNumber:       42,
 		Recommendation: "REVIEW_REQUIRED",
-		TotalFiles:    5,
-		AIGenerated:   2,
-		Critical:      0,
-		High:          1,
-		Medium:        1,
-		Low:           3,
+		TotalFiles:     5,
+		AIGenerated:    2,
+		Critical:       0,
+		High:           1,
+		Medium:         1,
+		Low:            3,
 		Files: []FileAnalysis{
 			{
 				Path:          "db/migration.go",
@@ -119,10 +119,10 @@ func TestEnhancedBriefingGeneration(t *testing.T) {
 		},
 		Incidents: []IncidentPattern{
 			{
-				Title:        "Migration Deadlock",
-				Severity:     "HIGH",
-				Description:  "Database migration locked tables",
-				RootCause:    "Missing lock timeout",
+				Title:       "Migration Deadlock",
+				Severity:    "HIGH",
+				Description: "Database migration locked tables",
+				RootCause:   "Missing lock timeout",
 			},
 		},
 	}

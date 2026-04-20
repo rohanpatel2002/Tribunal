@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -128,23 +129,38 @@ func deletePolicyHandler(w http.ResponseWriter, r *http.Request, repo Repository
 }
 
 // HealthCheckHandler provides comprehensive health status
-func HealthCheckHandler(repo Repository) http.HandlerFunc {
+func HealthCheckHandler(repo Repository, redisChecker RedisHealthChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+		checks := map[string]interface{}{
+			"database": map[string]interface{}{"status": "ok"},
+		}
 		health := map[string]interface{}{
 			"status":    "healthy",
 			"timestamp": time.Now().UTC(),
 			"version":   "1.0.0",
-			"checks": map[string]string{
-				"database": "ok",
-			},
+			"checks":    checks,
 		}
 
 		// Quick database health check
 		_, err := repo.GetRepositoryAuditSummary(ctx, "health-check")
 		if err != nil {
-			health["checks"].(map[string]string)["database"] = "degraded"
+			checks["database"] = map[string]interface{}{"status": "degraded"}
 			health["status"] = "degraded"
+		}
+
+		if redisChecker != nil {
+			pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			latency, err := redisChecker.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				checks["redis"] = map[string]interface{}{"status": "degraded", "error": err.Error()}
+				health["status"] = "degraded"
+			} else {
+				checks["redis"] = map[string]interface{}{"status": "ok", "latency_ms": latency.Milliseconds()}
+			}
+		} else {
+			checks["redis"] = map[string]interface{}{"status": "not_configured"}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -1,0 +1,29 @@
+groups:
+  - name: tribunal.rules
+    rules:
+      - alert: TribunalServiceDown
+        expr: tribunal_service_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TRIBUNAL service is down"
+          description: "The go-interceptor service has been unreachable for over 1 minute."
+
+      - alert: TribunalRedisPingFailed
+        expr: tribunal_redis_configured == 1 and tribunal_redis_last_ping_ok == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis ping failing"
+          description: "Redis is configured but ping checks are failing."
+
+      - alert: TribunalRedisErrors
+        expr: tribunal_redis_errors_total > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis errors observed"
+          description: "Redis-backed OAuth session store has reported errors."
