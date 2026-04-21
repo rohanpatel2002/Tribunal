@@ -112,7 +112,7 @@ export function BriefingDetail({ briefing, prNumber, recommendation, createdAt }
         className="w-full flex items-center justify-between text-left hover:bg-zinc-800/30 p-2 rounded transition"
       >
         <div className="flex items-center gap-3">
-          <FileText className="h-5 w-5 text-emerald-500 flex-shrink-0" />
+          <FileText className="h-5 w-5 text-emerald-500 shrink-0" />
           <div>
             <h3 className="font-semibold text-white">
               {recommendation === 'BLOCK' ? '🔴 PR #' + prNumber : '📋 PR #' + prNumber} - Context Briefing
@@ -126,9 +126,9 @@ export function BriefingDetail({ briefing, prNumber, recommendation, createdAt }
           </div>
         </div>
         {isExpanded ? (
-          <ChevronUp className="h-5 w-5 text-zinc-500 flex-shrink-0" />
+          <ChevronUp className="h-5 w-5 text-zinc-500 shrink-0" />
         ) : (
-          <ChevronDown className="h-5 w-5 text-zinc-500 flex-shrink-0" />
+          <ChevronDown className="h-5 w-5 text-zinc-500 shrink-0" />
         )}
       </button>
 

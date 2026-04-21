@@ -72,9 +72,7 @@ func VerifyBitbucketSignature(secret string, payload []byte, signature string) b
 	}
 
 	provided := signature
-	if strings.HasPrefix(provided, "sha256=") {
-		provided = strings.TrimPrefix(provided, "sha256=")
-	}
+	provided = strings.TrimPrefix(provided, "sha256=")
 
 	providedSig, err := hex.DecodeString(provided)
 	if err != nil {

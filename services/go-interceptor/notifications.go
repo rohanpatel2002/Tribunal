@@ -68,7 +68,7 @@ func (ns *NotificationService) ProcessEvent(ctx context.Context, event *Notifica
 
 	// Check cooldown period
 	if policy.LastNotified != nil {
-		timeSinceLastNotification := time.Now().Sub(*policy.LastNotified)
+		timeSinceLastNotification := time.Since(*policy.LastNotified)
 		if timeSinceLastNotification < policy.NotificationGap {
 			slog.Info("notification suppressed by cooldown", "repo", policy.Repository, "next_allowed", policy.LastNotified.Add(policy.NotificationGap))
 			return nil
