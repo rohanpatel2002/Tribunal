@@ -1,804 +1,369 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState } from 'react';
 import {
+  Bell,
   Settings,
-  GitPullRequest,
-  Activity,
-  ChevronRight,
-  Fingerprint,
-  RefreshCcw,
-  Lock,
-  AlertCircle,
+  User,
+  ArrowUpRight,
+  Play,
+  Pause,
+  Clock,
+  CheckCircle2,
+  Monitor,
+  ChevronDown,
+  MoreVertical,
+  MessageSquare,
   Zap,
-  Shield,
-  Download,
-  type LucideIcon,
+  Briefcase,
+  Link as LinkIcon
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import ErrorBoundary from '@/components/ErrorBoundary';
-import { DateRangeFilter } from '@/components/DateRangeFilter';
-import { RepositorySelector } from '@/components/RepositorySelector';
-import {
-  fetchAuditSummary,
-  fetchAuditLogs,
-  fetchGitHubConnectionStatus,
-  startGitHubConnection,
-  disconnectGitHub,
-  getDemoAuditSummary,
-  getDemoPRAnalysisRecords,
-  type AuditSummary,
-  type GitHubConnectionStatus,
-  type PRAnalysisRecord,
-  type FilterParams,
-} from '@/lib/api';
-import {
-  exportToCSV,
-  exportToJSON,
-  exportToTSV,
-  generateHTMLReport,
-  getTimestampedFilename,
-} from '@/lib/exportUtils';
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-const TABS = [
-  { id: 'overview', label: 'Overview', icon: Activity },
-  { id: 'analysis', label: 'Risk Analysis', icon: AlertCircle },
-  { id: 'policies', label: 'Security Policies', icon: Lock },
-  { id: 'settings', label: 'Settings', icon: Settings },
-];
-
-interface RepositoryOption {
-  id: string;
-  name: string;
-  fullName: string;
-  url: string;
-  isMonitored: boolean;
-}
-
-type ChartDataPoint = {
-  name: string;
-  Files: number;
-  AI: number;
-  Risks: number;
-};
-
-function DashboardContent() {
-  const [data, setData] = useState<AuditSummary | null>(null);
-  const [logs, setLogs] = useState<PRAnalysisRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [repo, setRepo] = useState('rohanpatel2002/tribunal');
-  const apiKey = process.env.NEXT_PUBLIC_API_KEY ?? 'dev_enterprise_key_123';
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [usingDemo, setUsingDemo] = useState(false);
-
-  // ============= PHASE 2: FILTERING =============
-  const [filters, setFilters] = useState<FilterParams>({});
-
-  // ============= PHASE 2: PAGINATION =============
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
-  const itemsPerPage = pageSize;
-
-  // ============= PHASE 3: DATE RANGE FILTERING =============
-  const [dateRangeOpen, setDateRangeOpen] = useState(false);
-
-  // ============= PHASE 3: REPOSITORY SELECTION =============
-  const [repositories, setRepositories] = useState<RepositoryOption[]>([
-    { id: '1', name: 'tribunal', fullName: 'rohanpatel2002/tribunal', url: 'https://github.com/rohanpatel2002/tribunal', isMonitored: true },
-    { id: '2', name: 'another-repo', fullName: 'rohanpatel2002/another-repo', url: 'https://github.com/rohanpatel2002/another-repo', isMonitored: true },
-  ]);
-  const [githubStatus, setGithubStatus] = useState<GitHubConnectionStatus | null>(null);
-
-  // ============= PHASE 3: EXPORT STATE =============
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const hasAnalyses = (data?.totalPRs ?? 0) > 0 || logs.length > 0;
-
-  const refreshGitHubConnection = useCallback(async () => {
-    const status = await fetchGitHubConnectionStatus(apiKey);
-    if (!status) {
-      return;
-    }
-
-    setGithubStatus(status);
-
-    if (status.connected && status.repos.length > 0) {
-      const mappedRepos: RepositoryOption[] = status.repos.map((connectedRepo) => ({
-        id: String(connectedRepo.id),
-        name: connectedRepo.name,
-        fullName: connectedRepo.fullName,
-        url: connectedRepo.htmlUrl,
-        isMonitored: true,
-      }));
-
-      setRepositories(mappedRepos);
-
-      const repoExists = mappedRepos.some((candidate) => candidate.fullName === repo);
-      if (!repoExists) {
-        setRepo(mappedRepos[0].fullName);
-      }
-    }
-  }, [apiKey, repo]);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setIsRefreshing(true);
-    setUsingDemo(false);
-
-    try {
-      // Fetch summary
-      const summary = await fetchAuditSummary(repo, apiKey);
-      if (summary) {
-        setData(summary);
-      } else {
-        // Use demo data as fallback
-        console.info('Using demo data (API unavailable)');
-        setData(getDemoAuditSummary(repo));
-        setUsingDemo(true);
-      }
-
-      // Fetch logs with pagination
-      const offset = (currentPage - 1) * itemsPerPage;
-      const logsData = await fetchAuditLogs(
-        repo,
-        apiKey,
-        { offset, limit: itemsPerPage },
-        filters
-      );
-
-      if (logsData) {
-        setLogs(logsData);
-      } else {
-        // Use demo data as fallback
-        setLogs(getDemoPRAnalysisRecords(repo));
-        setUsingDemo(true);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      // Gracefully fall back to demo data
-      setData(getDemoAuditSummary(repo));
-      setLogs(getDemoPRAnalysisRecords(repo));
-      setUsingDemo(true);
-    } finally {
-      setLoading(false);
-      setTimeout(() => setIsRefreshing(false), 500);
-    }
-  }, [repo, apiKey, currentPage, itemsPerPage, filters]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    refreshGitHubConnection();
-
-    const search = new URLSearchParams(window.location.search);
-    if (search.get('github')) {
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, [refreshGitHubConnection]);
-
-  // ============= CHART DATA =============
-  const chartData = useMemo(() => {
-    return logs
-      .slice()
-      .reverse()
-      .map((log) => ({
-        name: `PR #${log.prNumber}`,
-        Files: log.totalFiles,
-        AI: log.aiGenerated,
-        Risks: log.critical + log.high,
-      }));
-  }, [logs]);
-
-  // ============= PAGINATION HELPERS =============
-  const totalPages = Math.ceil((logs.length > 0 ? logs.length * 3 : 0) / itemsPerPage) || 1;
-  void totalPages;
-
-  // ============= PHASE 3: DATE RANGE HANDLERS =============
-  const handleApplyDateFilter = () => {
-    setCurrentPage(1);
-    setDateRangeOpen(false);
-  };
-
-  const handleClearDateFilter = () => {
-    setFilters({});
-    setCurrentPage(1);
-  };
-
-  // ============= PHASE 3: REPOSITORY HANDLER =============
-  const handleSelectRepository = (_name: string, fullName: string) => {
-    setRepo(fullName);
-    setCurrentPage(1);
-  };
-
-  const handleConnectGitHub = async () => {
-    const authorizationURL = await startGitHubConnection(apiKey);
-    if (!authorizationURL) {
-      return;
-    }
-    window.location.href = authorizationURL;
-  };
-
-  const handleDisconnectGitHub = async () => {
-    const ok = await disconnectGitHub(apiKey);
-    if (!ok) {
-      return;
-    }
-    setGithubStatus({ connected: false, repos: [] });
-    await refreshGitHubConnection();
-  };
-
-  // ============= PHASE 3: EXPORT HANDLERS =============
-  const handleExportCSV = () => {
-    exportToCSV(logs, getTimestampedFilename('audit-logs.csv'));
-    setShowExportMenu(false);
-  };
-
-  const handleExportJSON = () => {
-    exportToJSON(logs, { repository: repo, exportDate: new Date().toISOString() }, getTimestampedFilename('audit-logs.json'));
-    setShowExportMenu(false);
-  };
-
-  const handleExportTSV = () => {
-    exportToTSV(logs, getTimestampedFilename('audit-logs.tsv'));
-    setShowExportMenu(false);
-  };
-
-  const handleExportHTML = () => {
-    const html = generateHTMLReport(logs, data ?? undefined);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = window.URL.createObjectURL(blob);
-    link.download = getTimestampedFilename('audit-report.html');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(link.href);
-    setShowExportMenu(false);
-  };
-
-  return (
-    <div className="flex w-full h-full text-slate-200 font-sans overflow-hidden bg-[#0A0A0A]">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-[#0F0F11] border-r border-[#1F1F22] flex flex-col justify-between pt-6 pb-4">
-        <div className="px-5 flex flex-col gap-8">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-600/10 border border-indigo-500/20 p-2 rounded-xl">
-              <Fingerprint size={20} className="text-indigo-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight text-white leading-tight">
-                Tribunal
-              </h1>
-              <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">
-                Guardrails
-              </p>
-            </div>
-          </div>
-
-          <nav className="flex flex-col gap-1 mt-2">
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 px-3">
-              Main Menu
-            </p>
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all group',
-                  activeTab === tab.id
-                    ? 'bg-indigo-500/10 text-indigo-400 font-medium'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#1A1A1E]'
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <tab.icon
-                    size={16}
-                    className={
-                      activeTab === tab.id
-                        ? 'text-indigo-400'
-                        : 'text-slate-500 group-hover:text-slate-300'
-                    }
-                  />
-                  <span>{tab.label}</span>
-                </div>
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        <div className="px-5 mt-auto flex flex-col gap-4">
-          <button className="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-slate-200 hover:bg-[#1A1A1E] rounded-lg transition-colors text-sm">
-            <Settings size={16} />
-            <span>Settings</span>
-          </button>
-
-          <div className="pt-4 border-t border-[#1F1F22] flex items-center justify-between px-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#1A1A1E] border border-[#27272A] flex items-center justify-center">
-                <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-cyan-400 to-indigo-500" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-semibold text-white">Rohan P.</span>
-                <span className="text-[10px] text-emerald-500">System Admin</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <main className="flex-1 flex flex-col h-full bg-transparent overflow-y-auto relative">
-         <header className="h-16 border-b border-[#1F1F22] bg-[#0A0A0A]/80 backdrop-blur-xl sticky top-0 z-10 flex items-center justify-between px-8 gap-4">
-            <div className="flex items-center gap-3 text-sm min-w-0">
-               <span className="text-slate-500 whitespace-nowrap">Target</span>
-               <ChevronRight size={14} className="text-slate-700 flex-shrink-0" />
-               <div className="min-w-0 flex-1 max-w-xs">
-                  <RepositorySelector
-                    selectedRepo={repo}
-                    onSelectRepo={handleSelectRepository}
-                    repositories={repositories}
-                  />
-               </div>
-              {usingDemo && (
-                <span className="text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                  Demo data
-                </span>
-              )}
-              {!usingDemo && !hasAnalyses && (
-                <span className="text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/30">
-                  No analyses yet
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 ml-auto">
-               <div className="hidden md:flex items-center gap-2 px-2 py-1.5 rounded border border-[#27272A] bg-[#0F0F11]">
-                 <span className="text-[11px] text-slate-500">
-                   {githubStatus?.connected ? `GitHub: ${githubStatus.login ?? 'connected'}` : 'GitHub: not connected'}
-                 </span>
-                 {githubStatus?.connected ? (
-                   <button
-                     onClick={handleDisconnectGitHub}
-                     className="text-[11px] px-2 py-1 rounded bg-rose-500/10 text-rose-300 border border-rose-500/30 hover:bg-rose-500/20 transition-all"
-                   >
-                     Disconnect
-                   </button>
-                 ) : (
-                   <button
-                     onClick={handleConnectGitHub}
-                     className="text-[11px] px-2 py-1 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 transition-all"
-                   >
-                     Connect GitHub
-                   </button>
-                 )}
-               </div>
-
-               {/* Phase 3: Date Range Filter */}
-               <DateRangeFilter
-                 isOpen={dateRangeOpen}
-                 onToggle={() => setDateRangeOpen(!dateRangeOpen)}
-                 onApplyFilter={handleApplyDateFilter}
-                 onClearFilter={handleClearDateFilter}
-               />
-
-               {/* Phase 3: Export Menu */}
-               <div className="relative">
-                  <button
-                    onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20 hover:border-slate-500/40 transition-all"
-                  >
-                    <Download size={14} />
-                    <span>Export</span>
-                  </button>
-
-                  {showExportMenu && (
-                    <div className="absolute right-0 mt-2 w-32 bg-[#0F0F11] border border-[#1F1F22] rounded-lg shadow-lg z-50">
-                      <button
-                        onClick={handleExportCSV}
-                        className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-[#1A1A1E] transition-colors border-b border-[#1F1F22]"
-                      >
-                        CSV
-                      </button>
-                      <button
-                        onClick={handleExportJSON}
-                        className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-[#1A1A1E] transition-colors border-b border-[#1F1F22]"
-                      >
-                        JSON
-                      </button>
-                      <button
-                        onClick={handleExportTSV}
-                        className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-[#1A1A1E] transition-colors border-b border-[#1F1F22]"
-                      >
-                        TSV
-                      </button>
-                      <button
-                        onClick={handleExportHTML}
-                        className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-[#1A1A1E] transition-colors"
-                      >
-                        HTML Report
-                      </button>
-                    </div>
-                  )}
-               </div>
-
-               <button
-                 onClick={fetchData}
-                 className="flex items-center justify-center p-1.5 text-slate-400 hover:bg-[#1A1A1E] hover:text-white rounded border border-transparent hover:border-[#27272A] transition-all"
-               >
-                  <RefreshCcw size={16} className={isRefreshing ? "animate-spin text-indigo-400" : ""} />
-               </button>
-            </div>
-         </header>
-
-         <div className="p-8 max-w-350 w-full mx-auto pb-24">
-            {loading ? (
-              <div className="grid grid-cols-4 gap-4 animate-pulse">
-                {[1,2,3,4].map(i => <div key={i} className="h-28 bg-[#151518] rounded-xl border border-[#1F1F22]" />)}
-              </div>
-            ) : (
-              <>
-                 {activeTab === 'overview' && <RiskCommandView data={data} logs={logs} chartData={chartData} />}
-                 {activeTab === 'analysis' && <VulnerabilitiesView data={data} logs={logs} />}
-                 {activeTab === 'policies' && <PoliciesView />}
-                 {activeTab === 'settings' && <RepositoriesView data={data} repo={repo} />}
-              </>
-            )}
-         </div>
-      </main>
-    </div>
-  );
-}
-
-function RiskCommandView({
-  data,
-  logs,
-  chartData,
-}: {
-  data: AuditSummary | null;
-  logs: PRAnalysisRecord[];
-  chartData: ChartDataPoint[];
-}) {
-  return (
-    <div className="animate-in fade-in duration-500">
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Risk Command Center</h2>
-        <p className="text-sm text-slate-400 mt-1">Real-time analysis of pull requests, adversarial AI detections, and access violations.</p>
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard title="Analyzed Pull Requests" value={data?.totalPRs || 0} icon={GitPullRequest} color="text-blue-400" bg="bg-blue-400/10" />
-          <MetricCard title="AI-Generated PRs" value={data?.aiGeneratedPRs || 0} icon={Zap} color="text-indigo-400" bg="bg-indigo-400/10" />
-          <MetricCard title="Critical Policy Risks" value={data?.criticalRisks || 0} icon={AlertCircle} color={data?.criticalRisks ? "text-red-400" : "text-slate-400"} bg={data?.criticalRisks ? "bg-red-400/10" : "bg-[#1A1A1E]"} />
-          <MetricCard title="Global Syntax Trust" value={`${(100 - ((data?.averageAIScore || 0)*100)).toFixed(1)}%`} icon={Shield} color="text-emerald-400" bg="bg-emerald-400/10" />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-[#0F0F11] border border-[#1F1F22] rounded-xl p-6">
-            <h3 className="text-sm font-semibold text-slate-300 mb-6">Pipeline Activity (Recent PRs)</h3>
-             <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272A" vertical={false} />
-                  <XAxis dataKey="name" stroke="#52525B" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#52525B" fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip cursor={{ fill: '#1A1A1E' }} contentStyle={{ backgroundColor: '#0F0F11', border: '1px solid #27272A', borderRadius: '8px' }} />
-                  <Legend wrapperStyle={{ fontSize: '12px' }} />
-                  <Bar dataKey="Files" fill="#3B82F6" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="AI" fill="#8B5CF6" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Risks" fill="#EF4444" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
-             <div className="absolute inset-0 bg-linear-to-b from-indigo-500/5 to-transparent pointer-events-none" />
-             <span className="text-xs uppercase tracking-widest font-semibold text-indigo-400 mb-6 z-10">Threat Posture</span>
-             
-             <div className="relative w-40 h-40 flex items-center justify-center mb-6 z-10">
-                <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
-                   <circle cx="50" cy="50" r="40" stroke="#1F1F22" strokeWidth="8" fill="none" />
-                   <circle cx="50" cy="50" r="40" stroke="currentColor" className="text-indigo-500" strokeWidth="8" fill="none" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * ((data?.averageAIScore || 0) * 100)) / 100} strokeLinecap="round" />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                   <span className="text-3xl font-bold text-white">{((data?.averageAIScore || 0)*100).toFixed(0)}</span>
-                   <span className="text-[10px] text-slate-500 font-mono">AI Index</span>
-                </div>
-             </div>
-             <div className="w-full bg-[#1A1A1E] border border-[#27272A] rounded-lg p-3 z-10">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-400">Total Scans</span>
-                  <span className="font-mono text-slate-300">{data?.totalFiles}</span>
-                </div>
-             </div>
-          </div>
-        </div>
-
-        <LogTable logs={logs} title="Latest Audit Trail" />
-      </div>
-    </div>
-  );
-}
-
-function VulnerabilitiesView({ data, logs }: { data: AuditSummary | null; logs: PRAnalysisRecord[] }) {
-  const riskyLogs = logs.filter((l) => l.critical > 0 || l.high > 0);
-  
-  return (
-    <div className="animate-in fade-in duration-500">
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Vulnerability Intelligence</h2>
-        <p className="text-sm text-slate-400 mt-1">Deep dive into semantic risks, hallucinations, and code logic vulnerabilities detected.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <MetricCard title="Critical Exposures" value={data?.criticalRisks || 0} icon={AlertCircle} color="text-red-500" bg="bg-red-500/10" />
-        <MetricCard title="High Risk Anomalies" value={data?.highRisks || 0} icon={AlertCircle} color="text-orange-400" bg="bg-orange-500/10" />
-        <MetricCard title="Clean Audits" value={(data?.totalPRs || 0) - ((data?.criticalRisks || 0) + (data?.highRisks || 0))} icon={Shield} color="text-emerald-400" bg="bg-emerald-500/10" />
-      </div>
-
-      <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl overflow-hidden mt-2">
-         <div className="px-6 py-4 border-b border-[#1F1F22]">
-           <h3 className="text-sm font-semibold text-slate-300">Active Threats & Blocked Commits</h3>
-         </div>
-         
-         <div className="overflow-x-auto">
-           <table className="w-full text-sm text-left">
-             <thead className="text-[11px] text-slate-500 uppercase bg-[#141416] border-b border-[#1F1F22]">
-               <tr>
-                 <th className="px-6 py-3 font-semibold">Affected PR</th>
-                 <th className="px-6 py-3 font-semibold">Severity</th>
-                 <th className="px-6 py-3 font-semibold">Critical Flags</th>
-                 <th className="px-6 py-3 font-semibold">High Flags</th>
-                 <th className="px-6 py-3 font-semibold">Action Taken</th>
-               </tr>
-             </thead>
-             <tbody className="divide-y divide-[#1F1F22]">
-               {riskyLogs.length === 0 ? (
-                 <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No active vulnerabilities found. You are secure.</td></tr>
-               ) : riskyLogs.map((log, index: number) => (
-                 <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
-                   <td className="px-6 py-4"><span className="font-mono text-slate-300">#{log.prNumber}</span></td>
-                   <td className="px-6 py-4">
-                     {log.critical > 0 ? (
-                       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[10px] font-bold uppercase bg-red-500/10 text-red-500 border border-red-500/20">Critical</span>
-                     ) : (
-                       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[10px] font-bold uppercase bg-orange-500/10 text-orange-400 border border-orange-500/20">High</span>
-                     )}
-                   </td>
-                   <td className="px-6 py-4 font-mono text-slate-400">{log.critical}</td>
-                   <td className="px-6 py-4 font-mono text-slate-400">{log.high}</td>
-                   <td className="px-6 py-4 font-semibold text-red-400">BLOCKED</td>
-                 </tr>
-               ))}
-             </tbody>
-           </table>
-         </div>
-      </div>
-    </div>
-  );
-}
-
-function RepositoriesView({ data, repo }: { data: AuditSummary | null; repo: string }) {
-  return (
-    <div className="animate-in fade-in duration-500">
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Monitored Repositories</h2>
-        <p className="text-sm text-slate-400 mt-1">Manage and audit codebases protected by Tribunal Guardrails.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Active Repo */}
-        <div className="bg-[#0F0F11] border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.05)] rounded-xl p-6 relative overflow-hidden group transition-all hover:bg-[#141416]">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg"><GitPullRequest className="text-indigo-400" size={20}/></div>
-              <div>
-                <h3 className="text-sm font-bold text-white tracking-tight">{repo}</h3>
-                <span className="text-[10px] text-emerald-400 mt-1 font-mono flex items-center gap-1"><Shield size={10}/> SCANNING ACTIVE</span>
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#1F1F22]">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Analyzed PRs</p>
-              <p className="text-xl font-semibold text-slate-200 mt-1">{(data?.totalPRs || 0) + 184}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">AI Presence</p>
-              <p className="text-xl font-semibold text-slate-200 mt-1">{(data?.aiGeneratedPRs || 0) + 42}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Second Repo */}
-        <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl p-6 relative overflow-hidden group transition-all hover:bg-[#141416]">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg"><GitPullRequest className="text-blue-400" size={20}/></div>
-              <div>
-                <h3 className="text-sm font-bold text-white tracking-tight">rohanpatel2002/product_image-backend</h3>
-                <span className="text-[10px] text-emerald-400 mt-1 font-mono flex items-center gap-1"><Shield size={10}/> SCANNING ACTIVE</span>
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#1F1F22]">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Analyzed PRs</p>
-              <p className="text-xl font-semibold text-slate-200 mt-1">138</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">AI Presence</p>
-              <p className="text-xl font-semibold text-slate-200 mt-1">29</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PoliciesView() {
-  const [policies, setPolicies] = useState([
-    { id: 1, name: "Zero-Trust AI Syntax", desc: "Block incoming PRs containing hallucinated, non-existent external library imports.", triggers: 14, active: true },
-    { id: 2, name: "Critical Severity Guard", desc: "Force REVIEW_REQUIRED state when a high/critical semantic logic risk is detected by the LLM.", triggers: 42, active: true },
-    { id: 3, name: "Pushed Commit Limit", desc: "Flag branches exceeding 50+ changed files purely by an AI Agent.", triggers: 0, active: false },
-    { id: 4, name: "Auto-Approve Low Risk", desc: "Automatically pass standard checks for PRs with zero semantic impacts and >90% human syntax confidence.", triggers: 128, active: true },
-  ]);
-
-  const togglePolicy = (id: number) => {
-    setPolicies(policies.map(p => p.id === id ? { ...p, active: !p.active } : p));
-  };
-
-  return (
-    <div className="animate-in fade-in duration-500">
-      <div className="mb-8">
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Security Policies</h2>
-        <p className="text-sm text-slate-400 mt-1">Configure AI screening behaviors, semantic risk tolerances, and automatic PR blocks.</p>
-      </div>
-
-      <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl overflow-hidden">
-        <div className="divide-y divide-[#1F1F22]">
-          {policies.map(policy => (
-            <div key={policy.id} className="p-6 flex items-center justify-between hover:bg-[#141416] transition-colors">
-              <div className="flex-1 pr-8">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-sm font-semibold text-slate-200">{policy.name}</h3>
-                  {policy.active ? 
-                    <span className="px-2 py-0.5 rounded-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold uppercase">Active</span> :
-                    <span className="px-2 py-0.5 rounded-sm bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold uppercase">Disabled</span>
-                  }
-                </div>
-                <p className="text-sm text-slate-500 mt-1.5">{policy.desc}</p>
-                <div className="mt-3 flex items-center gap-2 text-xs font-mono text-slate-400">
-                   <Activity size={12} />
-                   <span>Triggered {policy.triggers} times this month</span>
-                </div>
-              </div>
-              <div onClick={() => togglePolicy(policy.id)}>
-                {policy.active ? 
-                  <div className="w-8 h-4 bg-indigo-500 rounded-full cursor-pointer hover:bg-indigo-400 transition-colors" /> : 
-                  <div className="w-8 h-4 bg-slate-600 rounded-full cursor-pointer hover:bg-slate-500 transition-colors" />
-                }
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LogTable({ logs, title }: { logs: PRAnalysisRecord[]; title: string }) {
-  return (
-    <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl overflow-hidden mt-2">
-       <div className="px-6 py-4 border-b border-[#1F1F22] flex justify-between items-center">
-         <h3 className="text-sm font-semibold text-slate-300">{title}</h3>
-         <button className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300">VIEW ALL</button>
-       </div>
-       <div className="overflow-x-auto">
-         <table className="w-full text-sm text-left">
-           <thead className="text-[11px] text-slate-500 uppercase bg-[#141416] border-b border-[#1F1F22]">
-             <tr>
-               <th className="px-6 py-3 font-semibold">Pull Request</th>
-               <th className="px-6 py-3 font-semibold">Status</th>
-               <th className="px-6 py-3 font-semibold text-right">Files</th>
-               <th className="px-6 py-3 font-semibold text-right">AI Gen</th>
-               <th className="px-6 py-3 font-semibold text-right">Critical Risk</th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-[#1F1F22]">
-             {logs.length === 0 ? (
-               <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No recent payload intercepted.</td></tr>
-             ) : logs.map((log, index: number) => (
-               <tr key={`${log.id ?? 'log'}-${log.prNumber ?? 'pr'}-${index}`} className="hover:bg-[#141416] transition-colors group cursor-pointer">
-                 <td className="px-6 py-3.5">
-                   <div className="flex items-center gap-2">
-                     <GitPullRequest size={14} className="text-slate-500" />
-                     <span className="font-mono text-slate-300">#{log.prNumber}</span>
-                   </div>
-                 </td>
-                 <td className="px-6 py-3.5">
-                   {log.recommendation === 'APPROVE' ? (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <Shield size={10} /> Approve
-                      </span>
-                   ) : log.recommendation === 'BLOCK' ? (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase bg-red-500/10 text-red-400 border border-red-500/20">
-                        <AlertCircle size={10} /> Block
-                      </span>
-                   ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        <Activity size={10} /> Review Req
-                      </span>
-                   )}
-                 </td>
-                 <td className="px-6 py-3.5 text-right font-mono text-slate-400">{log.totalFiles}</td>
-                 <td className="px-6 py-3.5 text-right font-mono text-slate-400">{log.aiGenerated}</td>
-                 <td className="px-6 py-3.5 text-right font-mono font-medium">
-                   {log.critical > 0 ? (
-                     <span className="text-red-400">{log.critical}</span>
-                   ) : (
-                     <span className="text-slate-600">-</span>
-                   )}
-                 </td>
-               </tr>
-             ))}
-           </tbody>
-         </table>
-       </div>
-    </div>
-  )
-}
-
-function MetricCard({
-  title,
-  value,
-  icon: Icon,
-  color,
-  bg,
-}: {
-  title: string;
-  value: string | number;
-  icon: LucideIcon;
-  color: string;
-  bg: string;
-}) {
-  return (
-    <div className="bg-[#0F0F11] border border-[#1F1F22] rounded-xl p-5 flex flex-col justify-between">
-      <div className="flex justify-between items-start">
-        <span className="text-slate-500 text-xs font-semibold">{title}</span>
-        <div className={cn("p-1.5 rounded-md", bg)}>
-          <Icon size={14} className={color} />
-        </div>
-      </div>
-      <div className="mt-4">
-        <span className="text-2xl font-semibold text-white tracking-tight">{value}</span>
-      </div>
-    </div>
-  );
-}
+const MENUS = ['Dashboard', 'People', 'Hiring', 'Devices', 'Apps', 'Salary', 'Calendar', 'Reviews'];
 
 export default function Dashboard() {
+  const [activeMenu, setActiveMenu] = useState('Dashboard');
+
   return (
-    <ErrorBoundary>
-      <DashboardContent />
-    </ErrorBoundary>
+    <div className="min-h-screen bg-[#c8cbd0] p-4 flex items-center justify-center font-sans text-slate-800">
+      <div className="w-full max-w-[1240px] h-[800px] bg-gradient-to-br from-[#f8f9e9] via-[#f7ebd4] to-[#f4d89a] rounded-[40px] shadow-2xl p-8 flex flex-col overflow-hidden relative">
+        
+        {/* HEADER */}
+        <header className="flex items-center justify-between mb-10 text-sm">
+          <div className="flex items-center px-6 py-2 border border-slate-300 rounded-full bg-white/50 backdrop-blur-sm">
+            <span className="text-xl font-normal tracking-tight">Crextio</span>
+          </div>
+
+          <div className="flex items-center gap-1 bg-white/50 backdrop-blur-md rounded-full p-1 shadow-sm">
+            {MENUS.map((menu) => (
+              <button
+                key={menu}
+                onClick={() => setActiveMenu(menu)}
+                className={`px-5 py-2 rounded-full font-medium transition-colors ${
+                  activeMenu === menu
+                    ? 'bg-[#292b2a] text-white shadow-md'
+                    : 'text-slate-600 hover:bg-white/50'
+                }`}
+              >
+                {menu}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button className="flex items-center gap-2 px-5 py-2.5 bg-white/70 backdrop-blur-sm rounded-full shadow-sm font-medium hover:bg-white transition-colors text-slate-700">
+              <Settings size={18} />
+              Setting
+            </button>
+            <button className="p-3 bg-white/70 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-slate-700">
+              <Bell size={18} />
+            </button>
+            <button className="p-3 bg-white/70 backdrop-blur-sm rounded-full shadow-sm hover:bg-white text-slate-700">
+              <User size={18} />
+            </button>
+          </div>
+        </header>
+
+        {/* WELCOME SECTION */}
+        <div className="mb-10">
+          <h1 className="text-[44px] font-light mb-8 tracking-tight text-slate-900">Welcome in, Nixtio</h1>
+          <div className="flex items-end justify-between">
+            <div className="flex gap-4">
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-slate-500">Interviews</p>
+                <div className="px-8 py-2.5 bg-[#292b2a] text-white rounded-full text-[13px] shadow-sm">15%</div>
+              </div>
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-slate-500">Hired</p>
+                <div className="px-8 py-2.5 bg-[#fad961] text-slate-900 rounded-full text-[13px] font-medium shadow-sm">15%</div>
+              </div>
+              <div className="space-y-3 w-56">
+                <p className="text-xs font-medium text-slate-500">Project time</p>
+                <div className="w-full flex items-center h-[40px] px-4 rounded-full bg-white/40 border border-white/60 overflow-hidden relative">
+                  <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.05) 4px, rgba(0,0,0,0.05) 8px)' }}></div>
+                  <span className="text-[13px] text-slate-500 relative z-10 w-full mb-0.5">60%</span>
+                  <div className="absolute left-1/4 transform -translate-x-1/2 w-[1px] h-4 bg-slate-300"></div>
+                  <div className="absolute left-2/4 transform -translate-x-1/2 w-[1px] h-4 bg-slate-300"></div>
+                  <div className="absolute left-3/4 transform -translate-x-1/2 w-[1px] h-4 bg-slate-300"></div>
+                </div>
+              </div>
+              <div className="space-y-3 w-28">
+                <p className="text-xs font-medium text-slate-500">Output</p>
+                <div className="w-full px-6 py-2.5 bg-transparent border-[1.5px] border-slate-400 rounded-full text-[13px] text-slate-700">10%</div>
+              </div>
+            </div>
+
+            <div className="flex items-end gap-10 pr-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#e8e9dc] flex items-center justify-center -mr-1">
+                  <User size={14} className="text-slate-600" />
+                </div>
+                <div className="text-[44px] font-light leading-none -tracking-wide">78</div>
+                <div className="text-[11px] text-slate-500 font-medium leading-tight mt-2 mr-2">Employe</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#e8e9dc] flex items-center justify-center -mr-1">
+                   <User size={14} className="text-slate-600" />
+                </div>
+                <div className="text-[44px] font-light leading-none -tracking-wide">56</div>
+                <div className="text-[11px] text-slate-500 font-medium leading-tight mt-2 mr-2">Hirings</div>
+              </div>
+              <div className="flex items-center gap-3">
+                 <div className="w-8 h-8 rounded-full bg-[#e8e9dc] flex items-center justify-center -mr-1">
+                    <Monitor size={14} className="text-slate-600" />
+                 </div>
+                <div className="text-[44px] font-light leading-none -tracking-wide">203</div>
+                <div className="text-[11px] text-slate-500 font-medium leading-tight mt-2">Projects</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* MAIN GRID */}
+        <div className="flex-1 grid grid-cols-12 gap-5 h-[340px]">
+          
+          {/* COL 1 */}
+          <div className="col-span-3 flex flex-col gap-5">
+            <div className="relative rounded-[32px] overflow-hidden h-[200px] shrink-0 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&h=400&fit=crop" className="w-full h-full object-cover scale-105" alt="Profile" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+              <div className="absolute bottom-4 left-5 right-5 flex justify-between items-end">
+                <div>
+                  <h3 className="text-white font-medium text-lg">Lora Piterson</h3>
+                  <p className="text-white/60 text-xs">UX/UI Designer</p>
+                </div>
+                <div className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-2xl text-white text-[13px] border border-white/20">$1,200</div>
+              </div>
+            </div>
+
+            <div className="bg-white/60 backdrop-blur-md rounded-[32px] p-5 shadow-sm flex-1 flex flex-col justify-between">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+                <span className="font-medium text-sm text-slate-800">Pension contributions</span>
+                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+              <div className="space-y-3 pb-2 border-b border-slate-200/60">
+                <div className="flex justify-between items-center text-slate-800">
+                  <span className="font-medium text-sm">Devices</span>
+                  <ChevronDown size={14} className="text-slate-800 rotate-180" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-10 bg-gradient-to-br from-red-500 to-purple-600 rounded-[10px] flex items-end justify-center overflow-hidden relative">
+                      <div className="w-10 h-6 bg-black rounded-t-sm absolute bottom-0 flex justify-center pt-0.5">
+                         <div className="w-4 h-[1px] bg-slate-400"></div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-medium text-slate-800">MacBook Air</p>
+                      <p className="text-[11px] text-slate-500">Version M1</p>
+                    </div>
+                  </div>
+                  <MoreVertical size={16} className="text-slate-400" />
+                </div>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+                <span className="font-medium text-sm text-slate-800">Compensation Summary</span>
+                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+              <div className="flex justify-between items-center pt-1">
+                <span className="font-medium text-sm text-slate-800">Employee Benefits</span>
+                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+            </div>
+          </div>
+
+          {/* COL 2 & 3 */}
+          <div className="col-span-6 flex flex-col gap-5">
+            <div className="flex gap-5 h-[200px]">
+              {/* Progress */}
+              <div className="flex-[0.55] bg-white/70 backdrop-blur-md rounded-[32px] p-6 shadow-sm relative group">
+                <div className="absolute top-5 right-5 p-1.5 rounded-full border border-slate-200 group-hover:bg-slate-50 transition-colors">
+                  <ArrowUpRight size={14} className="text-slate-500" />
+                </div>
+                <h3 className="text-[17px] font-medium mb-1 text-slate-800">Progress</h3>
+                <div className="flex items-end gap-2.5">
+                  <span className="text-[28px] font-light leading-none">6.1 h</span>
+                  <span className="text-[11px] text-slate-500 leading-tight w-14 mb-0.5 font-medium">Work Time this week</span>
+                </div>
+                
+                <div className="flex items-end justify-between h-[80px] mt-4 px-1 relative">
+                  <div className="absolute inset-x-0 top-1/2 border-t-[1.5px] border-dashed border-slate-200 -z-10 transform -translate-y-1/2"></div>
+                  {['S','M','T','W','T','F','S'].map((day, i) => {
+                    const isToday = i === 4;
+                    const h = isToday ? '100%' : (i===0 || i===6) ? '30%' : (i===1 ? '60%' : i===2 ? '40%' : i===3 ? '70%' : '50%');
+                    return (
+                    <div key={i} className="flex flex-col items-center h-full justify-end relative group/bar">
+                      <div className="absolute top-1/2 -mt-[3px] w-1.5 h-1.5 rounded-full bg-slate-200 z-0"></div>
+                      <div className={`w-[3px] rounded-full z-10 transition-all ${isToday ? 'bg-[#fad961]' : i === 0 || i === 6 ? 'bg-slate-300/50' : 'bg-[#292b2a]'}`} 
+                        style={{ height: h, marginBottom: '6px' }}
+                      ></div>
+                      <span className={`text-[10px] font-medium ${isToday ? 'text-slate-800' : 'text-slate-400'}`}>{day}</span>
+                      
+                      {isToday && (
+                        <div className="absolute -top-6 whitespace-nowrap bg-[#fad961] text-[10px] font-medium px-2 py-0.5 rounded-md text-slate-800 shadow-sm z-20">
+                          5h 23m
+                        </div>
+                      )}
+                    </div>
+                  )})}
+                </div>
+              </div>
+
+              {/* Time Tracker */}
+              <div className="flex-[0.45] bg-white/70 backdrop-blur-md rounded-[32px] p-6 shadow-sm relative group flex flex-col items-center">
+                <div className="absolute top-5 right-5 p-1.5 rounded-full border border-slate-200 group-hover:bg-slate-50 transition-colors">
+                  <ArrowUpRight size={14} className="text-slate-500" />
+                </div>
+                <h3 className="text-[17px] font-medium self-start w-full text-slate-800">Time tracker</h3>
+                
+                <div className="relative mt-2 mb-2 w-24 h-24 flex items-center justify-center">
+                   <div className="absolute inset-0 rounded-full border-[6px] border-slate-100"></div>
+                   <div className="absolute inset-0 rounded-full border-[6px] border-transparent border-r-[#fad961] border-b-[#fad961] transform -rotate-45 shadow-[0_0_15px_rgba(250,217,97,0.3)]"></div>
+                   {/* dashed tick marks around */}
+                   <div className="absolute inset-[-8px] border-[1px] border-dashed border-slate-300 rounded-full opacity-50"></div>
+                   <div className="text-center z-10 relative mt-1">
+                     <span className="text-[26px] font-light text-slate-800 tracking-tight leading-none">02:35</span>
+                     <p className="text-[9px] text-slate-500 font-medium mt-0.5">Work Time</p>
+                   </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-auto self-start pl-2">
+                  <button className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors">
+                    <Play size={15} fill="currentColor" />
+                  </button>
+                  <button className="w-8 h-8 flex items-center justify-center text-slate-800">
+                    <Pause size={15} fill="currentColor" />
+                  </button>
+                  <div className="flex-1"></div>
+                  <button className="w-9 h-9 rounded-[14px] bg-[#292b2a] text-white flex items-center justify-center hover:bg-black shadow-[0_4px_10px_rgba(41,43,42,0.3)] absolute right-5 bottom-5">
+                    <Clock size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Calendar */}
+            <div className="bg-white/70 backdrop-blur-md rounded-[32px] p-6 pt-5 shadow-sm flex-1 flex flex-col relative overflow-hidden">
+              {/* gradient blobs for BG lighting */}
+              <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-[#f4d89a]/30 blur-2xl rounded-full"></div>
+              
+              <div className="flex justify-between items-center mb-4 z-10">
+                <button className="px-5 py-1 rounded-full border border-slate-200 text-[11px] font-medium bg-white text-slate-600 shadow-sm">August</button>
+                <h3 className="font-medium text-slate-800 text-sm">September 2024</h3>
+                <button className="px-5 py-1 rounded-full border border-slate-200 text-[11px] font-medium bg-white text-slate-600 shadow-sm">October</button>
+              </div>
+
+              <div className="grid grid-cols-6 gap-0 text-center text-xs text-slate-400 mb-1 z-10">
+                <div></div>
+                <div><span className="text-[10px] font-medium">Mon</span><br/><span className="text-slate-800 font-medium text-[13px] mt-1 inline-block">22</span></div>
+                <div><span className="text-[10px] font-medium">Tue</span><br/><span className="text-slate-800 font-medium text-[13px] mt-1 inline-block">23</span></div>
+                <div><span className="text-[10px] font-medium">Wed</span><br/><span className="text-slate-800 font-medium text-[13px] mt-1 inline-block">24</span></div>
+                <div><span className="text-[10px] font-medium">Thu</span><br/><span className="text-slate-400 font-medium text-[13px] mt-1 inline-block">25</span></div>
+                <div><span className="text-[10px] font-medium">Fri</span><br/><span className="text-slate-400 font-medium text-[13px] mt-1 inline-block">26</span></div>
+              </div>
+
+              <div className="relative flex-1 mt-1 z-10">
+                <div className="absolute inset-0 grid grid-cols-6 gap-0 px-2 lg:px-4">
+                  <div className="border-r border-slate-200/60 border-dashed text-[10px] font-medium text-slate-400 space-y-6 text-right pr-3 pt-3">
+                    <div>8:00 am</div>
+                    <div>9:00 am</div>
+                    <div>10:00 am</div>
+                    <div>11:00 am</div>
+                  </div>
+                  <div className="border-r border-slate-200/60 border-dashed relative">
+                     {/* Blue block span */}
+                  </div>
+                  <div className="border-r border-slate-200/60 border-dashed relative">
+                    <div className="absolute top-[28px] -left-[90px] w-[200px] h-[46px] bg-[#292b2a] rounded-[14px] flex items-center p-3 gap-2 shadow-[0_8px_15px_rgba(0,0,0,0.15)] z-20 text-white">
+                      <div className="flex-1 overflow-hidden">
+                        <p className="text-[11px] font-medium mb-0.5">Weekly Team Sync</p>
+                        <p className="text-[9px] text-white/50 w-full truncate">Discuss progress on projects</p>
+                      </div>
+                      <div className="flex -space-x-1.5 shrink-0">
+                        <img className="w-[18px] h-[18px] rounded-full border border-[#292b2a] object-cover" src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop" />
+                        <img className="w-[18px] h-[18px] rounded-full border border-[#292b2a] object-cover" src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop" />
+                        <img className="w-[18px] h-[18px] rounded-full border border-[#292b2a] object-cover" src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100&h=100&fit=crop" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-r border-slate-200/60 border-dashed relative">
+                  </div>
+                  <div className="border-r border-slate-200/60 border-dashed relative">
+                    <div className="absolute top-[85px] -left-[70px] w-[180px] h-[46px] bg-white border border-slate-100 rounded-[14px] flex items-center p-3 gap-2 shadow-[0_8px_15px_rgba(0,0,0,0.05)] z-20">
+                      <div className="flex-1 overflow-hidden">
+                        <p className="text-[11px] font-medium text-slate-800 mb-0.5">Onboarding Session</p>
+                        <p className="text-[9px] text-slate-400 w-full truncate">Introduction for new hires</p>
+                      </div>
+                      <div className="flex -space-x-1.5 shrink-0">
+                        <img className="w-[18px] h-[18px] rounded-full border border-white object-cover" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop" />
+                        <img className="w-[18px] h-[18px] rounded-full border border-white object-cover" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" />
+                      </div>
+                    </div>
+                  </div>
+                  <div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* COL 3 */}
+          <div className="col-span-3 flex flex-col gap-5">
+            <div className="bg-white/70 backdrop-blur-md rounded-[32px] p-6 shadow-sm h-[130px]">
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-[17px] font-medium text-slate-800">Onboarding</h3>
+                <span className="text-3xl font-light leading-none -mt-1">18%</span>
+              </div>
+              <div className="flex items-center text-[10px] text-slate-500 mb-1.5 gap-1">
+                <div className="flex-[0.4] font-medium">30%</div>
+                <div className="flex-[0.4] font-medium">25%</div>
+                <div className="flex-[0.2] font-medium">0%</div>
+              </div>
+              <div className="flex gap-1 h-7 w-full">
+                <div className="flex-[0.4] bg-[#fad961] rounded-l-full rounded-r-md flex items-center px-3 text-[10px] font-medium text-slate-800 shadow-[0_2px_8px_rgba(250,217,97,0.3)]">Task</div>
+                <div className="flex-[0.4] bg-[#292b2a] rounded-md shadow-[0_2px_8px_rgba(0,0,0,0.1)]"></div>
+                <div className="flex-[0.2] bg-slate-300/60 rounded-r-full rounded-l-md"></div>
+              </div>
+            </div>
+
+            <div className="bg-[#292b2a] rounded-[32px] p-7 pt-6 text-white flex-1 shadow-[0_20px_40px_rgba(0,0,0,0.12)] flex flex-col">
+              <div className="flex justify-between items-start mb-6">
+                <h3 className="text-[17px] font-medium text-white/90 leading-tight">Onboarding Task</h3>
+                <span className="text-3xl font-light leading-none text-white/90">2/8</span>
+              </div>
+
+              <div className="space-y-5 mt-1">
+                {[
+                  { icon: Monitor, title: 'interview', time: 'Sep 13, 08:30', done: true },
+                  { icon: Zap, title: 'Team-Meeting', time: 'Sep 13, 10:30', done: true },
+                  { icon: MessageSquare, title: 'Project Update', time: 'Sep 13, 13:00', done: false },
+                  { icon: Briefcase, title: 'Discuss Q3 Goals', time: 'Sep 13, 14:45', done: false },
+                  { icon: LinkIcon, title: 'HR Policy Review', time: 'Sep 13, 16:30', done: false },
+                ].map((task, i) => (
+                  <div key={i} className="flex items-center gap-3.5 group cursor-pointer">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${task.done ? 'bg-white/10' : 'bg-white/5 group-hover:bg-white/10'}`}>
+                       <task.icon size={14} className={task.done ? "text-white/90" : "text-white/40"} />
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-[13px] ${task.done ? 'text-white/90' : 'text-white/50'} font-medium leading-tight`}>{task.title}</p>
+                      <p className="text-[10px] text-white/30 mt-0.5">{task.time}</p>
+                    </div>
+                    <div>
+                      {task.done ? (
+                        <div className="w-5 h-5 rounded-full bg-[#fad961] flex items-center justify-center shadow-[0_0_8px_rgba(250,217,97,0.3)]">
+                          <CheckCircle2 size={13} className="text-[#292b2a]" strokeWidth={3} />
+                        </div>
+                      ) : (
+                        <div className="w-5 h-5 rounded-full border-[1.5px] border-white/20 group-hover:border-white/40 transition-colors"></div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
   );
 }

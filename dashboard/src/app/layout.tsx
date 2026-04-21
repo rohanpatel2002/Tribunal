@@ -25,13 +25,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
-      style={{ colorScheme: 'dark' }}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#020617] text-gray-100 font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
-        <div className="flex h-screen overflow-hidden">
-          {/* Add a sleek subtle radial gradient in background */}
-          <div className="absolute top-0 left-0 w-full h-125 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-indigo-900/20 via-[#020617] to-transparent pointer-events-none -z-10" />
+      <body className="h-full font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
+        <div className="h-full">
           {children}
         </div>
       </body>

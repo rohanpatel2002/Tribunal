@@ -45,6 +45,7 @@ func (r *PostgresRepository) Close() {
 
 // SaveAnalysis inserts the PR analysis and its file results atomically within a transaction.
 func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResponse) error {
+	normalizedRepo := normalizeRepoName(response.Repository)
 	// Begin transaction
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -63,7 +64,7 @@ func (r *PostgresRepository) SaveAnalysis(ctx context.Context, response *Analyze
 		) RETURNING id`
 
 	err = tx.QueryRow(ctx, insertPRQuery,
-		response.Repository,
+		normalizedRepo,
 		response.PRNumber,
 		response.Recommendation,
 		response.TotalFiles,
@@ -130,7 +131,7 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 	queryPR := `
 		SELECT id, recommendation, total_files, ai_generated, critical, high, medium, low
 		FROM pr_analyses
-		WHERE repository = $1 AND pr_number = $2
+		WHERE LOWER(repository) = LOWER($1) AND pr_number = $2
 		ORDER BY created_at DESC
 		LIMIT 1`
 
@@ -199,12 +200,13 @@ func (r *PostgresRepository) GetAnalysisByPR(ctx context.Context, repository str
 
 // MarkWebhookProcessed records the delivery ID to ensure idempotent processing.
 func (r *PostgresRepository) MarkWebhookProcessed(ctx context.Context, deliveryID string, repoFullName string) (bool, error) {
+	normalizedRepo := normalizeRepoName(repoFullName)
 	query := `
 		INSERT INTO processed_webhooks (delivery_id, repository)
 		VALUES ($1, $2)
 		ON CONFLICT (delivery_id) DO NOTHING
 	`
-	commandTag, err := r.pool.Exec(ctx, query, deliveryID, repoFullName)
+	commandTag, err := r.pool.Exec(ctx, query, deliveryID, normalizedRepo)
 	if err != nil {
 		return false, fmt.Errorf("failed to mark webhook processed: %w", err)
 	}
@@ -298,6 +300,32 @@ func (r *PostgresRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 		}
 		results = append(results, rec)
 	}
+	return results, rows.Err()
+}
+
+func (r *PostgresRepository) ListRepositoriesWithAnalyses(ctx context.Context) ([]RepositoryAnalysisCount, error) {
+	query := `
+		SELECT LOWER(repository) as repository, COUNT(*)
+		FROM pr_analyses
+		GROUP BY LOWER(repository)
+		ORDER BY COUNT(*) DESC
+	`
+
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query repository analysis counts: %w", err)
+	}
+	defer rows.Close()
+
+	var results []RepositoryAnalysisCount
+	for rows.Next() {
+		var item RepositoryAnalysisCount
+		if err := rows.Scan(&item.Repository, &item.TotalPRs); err != nil {
+			return nil, fmt.Errorf("failed to scan repository analysis count: %w", err)
+		}
+		results = append(results, item)
+	}
+
 	return results, rows.Err()
 }
 
