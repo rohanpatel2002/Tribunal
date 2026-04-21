@@ -4,7 +4,6 @@ go 1.25.0
 
 require (
 	github.com/jackc/pgx/v5 v5.9.1
-	github.com/lib/pq v1.10.9
 	github.com/redis/go-redis/v9 v9.18.0
 	golang.org/x/time v0.15.0
 )
