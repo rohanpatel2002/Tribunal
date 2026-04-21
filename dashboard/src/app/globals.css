@@ -13,18 +13,73 @@ body {
   color: #f8fafc;
 }
 
-/* Custom Webkit scrollbar for sleek list flows */
+/* Custom Webkit scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
+  background: #1e293b;
+  border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #334155;
 }
+
+/* ─── Premium Animations ─── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35); }
+  70%  { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.04) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.2s ease-in-out infinite;
+}
+
+/* Glass card base */
+.glass {
+  background: rgba(255,255,255,0.025);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 1rem;
+}
+
+/* Glow effect for active states */
+.glow-emerald { box-shadow: 0 0 20px rgba(52, 211, 153, 0.15); }
+.glow-indigo  { box-shadow: 0 0 20px rgba(99, 102, 241, 0.15); }
+.glow-red     { box-shadow: 0 0 20px rgba(239, 68, 68, 0.15); }
+
+/* Stagger fade-in for rows */
+tbody tr:nth-child(1) { animation: fade-in 0.3s ease both; }
+tbody tr:nth-child(2) { animation: fade-in 0.35s 0.04s ease both; }
+tbody tr:nth-child(3) { animation: fade-in 0.35s 0.08s ease both; }
+tbody tr:nth-child(4) { animation: fade-in 0.35s 0.12s ease both; }
+tbody tr:nth-child(5) { animation: fade-in 0.35s 0.16s ease both; }
+tbody tr:nth-child(n+6) { animation: fade-in 0.35s 0.20s ease both; }
+

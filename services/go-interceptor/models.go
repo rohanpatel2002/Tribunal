@@ -68,6 +68,11 @@ type AuditSummary struct {
 	AverageAIScore float64 `json:"averageAIScore"`
 }
 
+type RepositoryAnalysisCount struct {
+	Repository string `json:"repository"`
+	TotalPRs   int    `json:"totalPRs"`
+}
+
 type PRAnalysisRecord struct {
 	ID                string             `json:"id"`
 	Repository        string             `json:"repository"`

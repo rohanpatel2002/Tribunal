@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -203,6 +202,28 @@ func (r *InMemoryRepository) GetRecentAnalyses(ctx context.Context, limit int, r
 	return records, nil
 }
 
+func (r *InMemoryRepository) ListRepositoriesWithAnalyses(ctx context.Context) ([]RepositoryAnalysisCount, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	results := make([]RepositoryAnalysisCount, 0, len(r.analyses))
+	for repoName, analyses := range r.analyses {
+		results = append(results, RepositoryAnalysisCount{
+			Repository: repoName,
+			TotalPRs:   len(analyses),
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].TotalPRs == results[j].TotalPRs {
+			return results[i].Repository < results[j].Repository
+		}
+		return results[i].TotalPRs > results[j].TotalPRs
+	})
+
+	return results, nil
+}
+
 // SaveSecurityPolicy saves a policy to in-memory storage.
 func (r *InMemoryRepository) SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error {
 	r.mu.Lock()
@@ -364,10 +385,6 @@ func (r *InMemoryRepository) ListActiveAPIKeys(repository string) ([]*APIKeyMeta
 	})
 
 	return keys, nil
-}
-
-func normalizeRepoName(repository string) string {
-	return strings.ToLower(strings.TrimSpace(repository))
 }
 
 func cloneAPIKeyMetadata(meta *APIKeyMetadata) *APIKeyMetadata {

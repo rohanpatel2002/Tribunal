@@ -159,6 +159,10 @@ func (m *MockRepository) SaveAnalysis(ctx context.Context, response *AnalyzeResp
 func (m *MockRepository) GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error) {
 	return nil, nil // Return empty list for successful tests requiring no data by default
 }
+
+func (m *MockRepository) ListRepositoriesWithAnalyses(ctx context.Context) ([]RepositoryAnalysisCount, error) {
+	return []RepositoryAnalysisCount{}, nil
+}
 func (m *MockRepository) GetAnalysisByPR(ctx context.Context, repository string, prNumber int) (*AnalyzeResponse, error) {
 	if m.GetFunc != nil {
 		return m.GetFunc(ctx, repository, prNumber)

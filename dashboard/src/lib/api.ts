@@ -99,6 +99,11 @@ export interface GitHubConnectionStatus {
   repos: GitHubRepo[];
 }
 
+export interface RepositoryAnalysisCount {
+  repository: string;
+  totalPRs: number;
+}
+
 export interface PaginationParams {
   offset?: number;
   limit?: number;
@@ -194,6 +199,34 @@ export async function fetchAuditLogs(
     return data.data || [];
   } catch (error) {
     console.error('Error fetching audit logs:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch list of repositories that have analyses
+ */
+export async function fetchRepositoryAnalysisCounts(
+  apiKey: string
+): Promise<RepositoryAnalysisCount[] | null> {
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/${API_VERSION}/audit/repositories`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(apiKey),
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`Repository counts fetch failed: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error('Error fetching repository analysis counts:', error);
     return null;
   }
 }
@@ -365,6 +398,57 @@ export async function disconnectGitHub(apiKey: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Fetch API keys for a repository
+ */
+export async function fetchAPIKeys(
+  repository: string,
+  apiKey: string
+): Promise<ApiKeyInfo[] | null> {
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/${API_VERSION}/api-keys?repository=${encodeURIComponent(repository)}`,
+      { method: 'GET', headers: getAuthHeader(apiKey) }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.keys ?? [];
+  } catch (error) {
+    console.error('Error fetching API keys:', error);
+    return null;
+  }
+}
+
+/**
+ * Rotate an API key
+ */
+export async function rotateAPIKey(
+  currentKeyId: string,
+  name: string,
+  apiKey: string
+): Promise<{ newKey: string } | null> {
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/${API_VERSION}/api-keys/rotate`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(apiKey),
+        body: JSON.stringify({ currentKeyId, name }),
+      }
+    );
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.error('Error rotating API key:', error);
+    return null;
+  }
+}
+
+/**
+ * Expose base URL for direct fetch calls
+ */
+export const TRIBUNAL_API_BASE = API_BASE;
 
 /**
  * Format API error response for display

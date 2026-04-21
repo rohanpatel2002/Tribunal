@@ -147,6 +147,7 @@ func (h *Handler) getAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	repoName = normalizeRepoName(repoName)
 	analysis, err := h.repo.GetAnalysisByPR(r.Context(), repoName, prNum)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") || err == ErrAnalysisNotFound {
@@ -172,6 +173,8 @@ func (h *Handler) getAuditSummaryHandler(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing repository query parameter"})
 		return
 	}
+	repository = normalizeRepoName(repository)
+	repository = normalizeRepoName(repository)
 
 	if h.repo == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
@@ -199,6 +202,7 @@ func (h *Handler) getAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing repository query parameter"})
 		return
 	}
+	repository = normalizeRepoName(repository)
 
 	// Pagination parameters
 	limit := 50
@@ -279,6 +283,33 @@ func (h *Handler) getAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) getRepositoryAnalysisCountsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	if h.repo == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not configured"})
+		return
+	}
+
+	counts, err := h.repo.ListRepositoriesWithAnalyses(r.Context())
+	if err != nil {
+		slog.Error("failed to fetch repository analysis counts", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+
+	if counts == nil {
+		counts = []RepositoryAnalysisCount{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": counts,
+	})
+}
+
 func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -336,7 +367,7 @@ func (h *Handler) githubWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := AnalyzeRequest{
-		Repository: payload.Repository.FullName,
+		Repository: normalizeRepoName(payload.Repository.FullName),
 		PRNumber:   payload.PullRequest.Number,
 		Files:      payload.TribunalFiles,
 	}
@@ -489,7 +520,7 @@ func (h *Handler) gitlabWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := AnalyzeRequest{
-		Repository: payload.Project.PathWithNamespace,
+		Repository: normalizeRepoName(payload.Project.PathWithNamespace),
 		PRNumber:   payload.ObjectAttributes.Iid,
 		Files:      payload.TribunalFiles,
 	}
@@ -550,7 +581,7 @@ func (h *Handler) bitbucketWebhookHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	req := AnalyzeRequest{
-		Repository: payload.Repository.FullName,
+		Repository: normalizeRepoName(payload.Repository.FullName),
 		PRNumber:   payload.PullRequest.Id,
 		Files:      payload.TribunalFiles,
 	}
@@ -586,6 +617,8 @@ func (h *Handler) analyzeHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+
+	req.Repository = normalizeRepoName(req.Repository)
 
 	// For manual test runs without webhook context
 	repoContext := ""

@@ -43,6 +43,9 @@ type Repository interface {
 	// GetRecentAnalyses retrieves a paginated list of recent PR analyses for audit logging purposes.
 	GetRecentAnalyses(ctx context.Context, limit int, repository string) ([]PRAnalysisRecord, error)
 
+	// ListRepositoriesWithAnalyses returns the list of repositories that have analyses.
+	ListRepositoriesWithAnalyses(ctx context.Context) ([]RepositoryAnalysisCount, error)
+
 	// SaveSecurityPolicy persists a security policy to the database.
 	SaveSecurityPolicy(ctx context.Context, policy *SecurityPolicy) error
 
